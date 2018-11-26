@@ -38,30 +38,9 @@ type FullSlackForm struct {
 	Text        string `schema:"text"`
 	ChannelID   string `schema:"channel_id"`
 	ChannelName string `schema:"channel_name"`
+	UserID      string `schema:"user_id"`
+	UserName    string `schema:"user_name"`
 }
-
-const (
-	commandAdd    = "/add"
-	commandDelete = "/delete"
-	commandList   = "/list"
-
-	commandAddTime    = "/standup_time_set"
-	commandRemoveTime = "/standup_time_remove"
-	commandListTime   = "/standup_time"
-
-	commandAddTimeTable    = "/timetable_set"
-	commandRemoveTimeTable = "/timetable_remove"
-	commandShowTimeTable   = "/timetable_show"
-
-	commandReportByProject       = "/report_by_project"
-	commandReportByUser          = "/report_by_user"
-	commandReportByUserInProject = "/report_by_user_in_project"
-
-	commandHelp = "/helper"
-)
-
-//ResponseText is Comedian API response text message to be displayed
-var ResponseText string
 
 // NewRESTAPI creates API for Slack commands
 func NewRESTAPI(slack *chat.Slack) (*REST, error) {
@@ -80,12 +59,8 @@ func NewRESTAPI(slack *chat.Slack) (*REST, error) {
 		conf:    slack.Conf,
 	}
 
-	r.initEndpoints()
-	return r, nil
-}
-
-func (r *REST) initEndpoints() {
 	r.echo.POST("/commands", r.handleCommands)
+	return r, nil
 }
 
 // Start starts http server
@@ -98,42 +73,48 @@ func (r *REST) handleCommands(c echo.Context) error {
 	if err != nil {
 		logrus.Errorf("rest: c.FormParams failed: %v\n", err)
 	}
-	command := form.Get("command")
-
-	switch command {
-	case commandHelp:
-		return r.helpCommand(c, form)
-	case commandAdd:
-		return r.addCommand(c, form)
-	case commandList:
-		return r.listCommand(c, form)
-	case commandDelete:
-		return r.deleteCommand(c, form)
-	case commandAddTime:
-		return r.addTime(c, form)
-	case commandRemoveTime:
-		return r.removeTime(c, form)
-	case commandListTime:
-		return r.listTime(c, form)
-	case commandAddTimeTable:
-		return r.addTimeTable(c, form)
-	case commandRemoveTimeTable:
-		return r.removeTimeTable(c, form)
-	case commandShowTimeTable:
-		return r.showTimeTable(c, form)
-	case commandReportByProject:
-		return r.reportByProject(c, form)
-	case commandReportByUser:
-		return r.reportByUser(c, form)
-	case commandReportByUserInProject:
-		return r.reportByProjectAndUser(c, form)
-	default:
-		return c.String(http.StatusNotImplemented, "Not implemented")
+	fullForm := FullSlackForm{
+		Command:     form.Get("command"),
+		Text:        form.Get("text"),
+		ChannelID:   form.Get("channel_id"),
+		ChannelName: form.Get("channel_name"),
+		UserID:      form.Get("user_id"),
+		UserName:    form.Get("user_name"),
 	}
-}
 
-func (r *REST) helpCommand(c echo.Context, f url.Values) error {
-	return c.String(http.StatusOK, r.conf.Translate.HelpCommand)
+	if fullForm.Command != "/comedian" {
+		return c.String(http.StatusNotImplemented, "Not implemented")
+	} else {
+		fmt.Println("Correct Slash Command")
+	}
+
+	// switch {
+	// case commandAdd:
+	// 	return r.addCommand(c, form)
+	// case commandList:
+	// 	return r.listCommand(c, form)
+	// case commandDelete:
+	// 	return r.deleteCommand(c, form)
+	// case commandAddTime:
+	// 	return r.addTime(c, form)
+	// case commandRemoveTime:
+	// 	return r.removeTime(c, form)
+	// case commandListTime:
+	// 	return r.listTime(c, form)
+	// case commandAddTimeTable:
+	// 	return r.addTimeTable(c, form)
+	// case commandRemoveTimeTable:
+	// 	return r.removeTimeTable(c, form)
+	// case commandShowTimeTable:
+	// 	return r.showTimeTable(c, form)
+	// case commandReportByProject:
+	// 	return r.reportByProject(c, form)
+	// case commandReportByUser:
+	// 	return r.reportByUser(c, form)
+	// case commandReportByUserInProject:
+	// 	return r.reportByProjectAndUser(c, form)
+	// }
+	return nil
 }
 
 func (r *REST) addCommand(c echo.Context, f url.Values) error {
