@@ -132,10 +132,18 @@ func (r *REST) displayHelpText() string {
 }
 
 func (r *REST) addCommand(accessLevel int, channelID, params string) string {
-	//check if this can cause problems
-	dividedText := strings.Split(params, "/")
-	members := strings.Fields(dividedText[0])
-	switch dividedText[1] {
+	var role string
+	var members []string
+	if strings.Contains(params, "/") {
+		dividedText := strings.Split(params, "/")
+		role = strings.TrimSpace(dividedText[1])
+		members = strings.Fields(dividedText[0])
+	} else {
+		role = "developer"
+		members = strings.Fields(params)
+	}
+
+	switch role {
 	case "admin", "админ":
 		if accessLevel > 2 {
 			return r.conf.Translate.AccessAtLeastAdmin
@@ -151,39 +159,6 @@ func (r *REST) addCommand(accessLevel int, channelID, params string) string {
 			return r.conf.Translate.AccessAtLeastAdmin
 		}
 		return r.addMembers(members, "pm", channelID)
-	default:
-		return r.conf.Translate.NeedCorrectUserRole
-	}
-}
-
-func (r *REST) listCommand(channelID, params string) string {
-	switch params {
-	case "admin", "админ":
-		return r.listAdmins()
-	case "developer", "разработчик", "":
-		return r.listMembers(channelID, "developer")
-	case "pm", "пм":
-		return r.listMembers(channelID, "pm")
-	default:
-		return r.conf.Translate.NeedCorrectUserRole
-	}
-}
-
-func (r *REST) deleteCommand(accessLevel int, channelID, params string) string {
-	//check if this can cause problems
-	dividedText := strings.Split(params, "/")
-	members := strings.Fields(dividedText[0])
-	switch dividedText[1] {
-	case "admin", "админ":
-		if accessLevel > 2 {
-			return r.conf.Translate.AccessAtLeastAdmin
-		}
-		return r.deleteAdmins(members)
-	case "developer", "разработчик", "pm", "пм", "":
-		if accessLevel > 3 {
-			return r.conf.Translate.AccessAtLeastPM
-		}
-		return r.deleteMembers(members, channelID)
 	default:
 		return r.conf.Translate.NeedCorrectUserRole
 	}
@@ -218,13 +193,26 @@ func (r *REST) addMembers(users []string, role, channelID string) string {
 	}
 
 	if len(failed) != 0 {
-		text += fmt.Sprintf(r.conf.Translate.AddMembersFailed, failed)
+		if role == "pm" {
+			text += fmt.Sprintf(r.conf.Translate.AddPMsFailed, failed)
+		} else {
+			text += fmt.Sprintf(r.conf.Translate.AddMembersFailed, failed)
+		}
 	}
 	if len(exist) != 0 {
-		text += fmt.Sprintf(r.conf.Translate.AddMembersExist, exist)
+		if role == "pm" {
+			text += fmt.Sprintf(r.conf.Translate.AddPMsExist, exist)
+		} else {
+			text += fmt.Sprintf(r.conf.Translate.AddMembersExist, exist)
+		}
+
 	}
 	if len(added) != 0 {
-		text += fmt.Sprintf(r.conf.Translate.AddMembersAdded, added)
+		if role == "pm" {
+			text += fmt.Sprintf(r.conf.Translate.AddPMsAdded, added)
+		} else {
+			text += fmt.Sprintf(r.conf.Translate.AddMembersAdded, added)
+		}
 	}
 	return text
 }
@@ -270,6 +258,47 @@ func (r *REST) addAdmins(users []string) string {
 	}
 
 	return text
+}
+
+func (r *REST) listCommand(channelID, params string) string {
+	switch params {
+	case "admin", "админ":
+		return r.listAdmins()
+	case "developer", "разработчик", "":
+		return r.listMembers(channelID, "developer")
+	case "pm", "пм":
+		return r.listMembers(channelID, "pm")
+	default:
+		return r.conf.Translate.NeedCorrectUserRole
+	}
+}
+
+func (r *REST) deleteCommand(accessLevel int, channelID, params string) string {
+	var role string
+	var members []string
+	if strings.Contains(params, "/") {
+		dividedText := strings.Split(params, "/")
+		role = strings.TrimSpace(dividedText[1])
+		members = strings.Fields(dividedText[0])
+	} else {
+		role = "developer"
+		members = strings.Fields(params)
+	}
+
+	switch role {
+	case "admin", "админ":
+		if accessLevel > 2 {
+			return r.conf.Translate.AccessAtLeastAdmin
+		}
+		return r.deleteAdmins(members)
+	case "developer", "разработчик", "pm", "пм", "":
+		if accessLevel > 3 {
+			return r.conf.Translate.AccessAtLeastPM
+		}
+		return r.deleteMembers(members, channelID)
+	default:
+		return r.conf.Translate.NeedCorrectUserRole
+	}
 }
 
 func (r *REST) listMembers(channelID, role string) string {
