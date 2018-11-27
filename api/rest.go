@@ -117,9 +117,13 @@ func (r *REST) handleCommands(c echo.Context) error {
 		return c.String(http.StatusOK, r.removeTimeTable(accessLevel, form.ChannelID, params))
 	case "report_on_user_in_project":
 		return c.String(http.StatusOK, r.showTimeTable(accessLevel, form.ChannelID, params))
+	default:
+		return c.String(http.StatusOK, r.displayHelpText())
 	}
+}
 
-	return nil
+func (r *REST) displayHelpText() string {
+	return "Help Text!"
 }
 
 func (r *REST) addCommand(accessLevel int, channelID, params string) string {
