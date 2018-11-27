@@ -151,3 +151,23 @@ func TestPrepareTimetable(t *testing.T) {
 	assert.NoError(t, slack.DB.DeleteTimeTable(tt.ID))
 
 }
+
+func TestCommandParsing(t *testing.T) {
+
+	testCases := []struct {
+		text    string
+		command string
+		body    string
+	}{
+		{"list", "list", ""},
+		{" list ", "list", ""},
+		{" list admin", "list", "admin"},
+		{" list admin ", "list", "admin"},
+		{" add <@userID1|userName> ", "add", "<@userID1|userName>"},
+	}
+	for _, tt := range testCases {
+		commandTitle, commandBody := CommandParsing(tt.text)
+		assert.Equal(t, tt.command, commandTitle)
+		assert.Equal(t, tt.body, commandBody)
+	}
+}
