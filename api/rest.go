@@ -96,15 +96,15 @@ func (r *REST) handleCommands(c echo.Context) error {
 	case "add":
 		return c.String(http.StatusOK, r.addCommand(accessLevel, form.ChannelID, params))
 	case "list":
-		return c.String(http.StatusOK, r.listCommand(accessLevel, form.ChannelID, params))
+		return c.String(http.StatusOK, r.listCommand(form.ChannelID, params))
 	case "delete":
 		return c.String(http.StatusOK, r.deleteCommand(accessLevel, form.ChannelID, params))
 	case "add_deadline":
 		return c.String(http.StatusOK, r.addTime(accessLevel, form.ChannelID, params))
 	case "remove_deadline":
-		return c.String(http.StatusOK, r.removeTime(accessLevel, form.ChannelID, params))
+		return c.String(http.StatusOK, r.removeTime(accessLevel, form.ChannelID))
 	case "show_deadline":
-		return c.String(http.StatusOK, r.showTime(accessLevel, form.ChannelID, params))
+		return c.String(http.StatusOK, r.showTime(form.ChannelID))
 	case "add_timetable":
 		return c.String(http.StatusOK, r.addTimeTable(accessLevel, form.ChannelID, params))
 	case "remove_timetable":
@@ -123,8 +123,10 @@ func (r *REST) handleCommands(c echo.Context) error {
 }
 
 func (r *REST) addCommand(accessLevel int, channelID, params string) string {
-	//add parsing of params
-	switch role {
+	//check if this can cause problems
+	dividedText := strings.Split(params, "/")
+	members := strings.Fields(dividedText[0])
+	switch dividedText[1] {
 	case "admin", "админ":
 		if accessLevel > 2 {
 			return r.conf.Translate.AccessAtLeastAdmin
@@ -145,33 +147,34 @@ func (r *REST) addCommand(accessLevel int, channelID, params string) string {
 	}
 }
 
-func (r *REST) listCommand(accessLevel int, channelID, params string) string {
-	//add parsing of params
-	switch role {
+func (r *REST) listCommand(channelID, params string) string {
+	switch params {
 	case "admin", "админ":
 		return r.listAdmins()
 	case "developer", "разработчик", "":
-		return r.listMembers(ChannelID, "developer")
+		return r.listMembers(channelID, "developer")
 	case "pm", "пм":
-		return r.listMembers(ChannelID, "pm")
+		return r.listMembers(channelID, "pm")
 	default:
 		return r.conf.Translate.NeedCorrectUserRole
 	}
 }
 
 func (r *REST) deleteCommand(accessLevel int, channelID, params string) string {
-	//add parsing of params
-	switch role {
+	//check if this can cause problems
+	dividedText := strings.Split(params, "/")
+	members := strings.Fields(dividedText[0])
+	switch dividedText[1] {
 	case "admin", "админ":
 		if accessLevel > 2 {
 			return r.conf.Translate.AccessAtLeastAdmin
 		}
-		return r.deleteAdmins(users)
+		return r.deleteAdmins(members)
 	case "developer", "разработчик", "pm", "пм", "":
 		if accessLevel > 3 {
 			return r.conf.Translate.AccessAtLeastPM
 		}
-		return r.deleteMembers(users, channelID)
+		return r.deleteMembers(members, channelID)
 	default:
 		return r.conf.Translate.NeedCorrectUserRole
 	}
@@ -368,12 +371,11 @@ func (r *REST) deleteAdmins(users []string) string {
 }
 
 func (r *REST) addTime(accessLevel int, channelID, params string) string {
-	//add parsing of params
 	if accessLevel > 3 {
 		return r.conf.Translate.AccessAtLeastPM
 	}
 
-	timeInt, err := utils.ParseTimeTextToInt(ca.Text)
+	timeInt, err := utils.ParseTimeTextToInt(params)
 	if err != nil {
 		return err.Error()
 	}
@@ -392,7 +394,7 @@ func (r *REST) addTime(accessLevel int, channelID, params string) string {
 	return fmt.Sprintf(r.conf.Translate.AddStandupTime, timeInt)
 }
 
-func (r *REST) showTime(accessLevel int, channelID, params string) string {
+func (r *REST) showTime(channelID string) string {
 	standupTime, err := r.db.GetChannelStandupTime(channelID)
 	if err != nil || standupTime == int64(0) {
 		logrus.Errorf("GetChannelStandupTime failed: %v", err)
@@ -401,7 +403,7 @@ func (r *REST) showTime(accessLevel int, channelID, params string) string {
 	return fmt.Sprintf(r.conf.Translate.ShowStandupTime, standupTime)
 }
 
-func (r *REST) removeTime(accessLevel int, channelID, params string) string {
+func (r *REST) removeTime(accessLevel int, channelID string) string {
 	if accessLevel > 3 {
 		return r.conf.Translate.AccessAtLeastPM
 	}
@@ -423,7 +425,7 @@ func (r *REST) addTimeTable(accessLevel int, channelID, params string) string {
 		return r.conf.Translate.AccessAtLeastPM
 	}
 
-	usersText, weekdays, time, err := utils.SplitTimeTalbeCommand(ca.Text, r.conf.Translate.DaysDivider, r.conf.Translate.TimeDivider)
+	usersText, weekdays, time, err := utils.SplitTimeTalbeCommand(params, r.conf.Translate.DaysDivider, r.conf.Translate.TimeDivider)
 	if err != nil {
 		return err.Error()
 	}
@@ -472,16 +474,16 @@ func (r *REST) addTimeTable(accessLevel int, channelID, params string) string {
 		logrus.Infof("Timetable updated id:%v", tt.ID)
 		fmt.Sprintf(r.conf.Translate.TimetableUpdated, userID, tt.Show())
 	}
-	return nil
+	return ""
 }
 
 func (r *REST) showTimeTable(accessLevel int, channelID, params string) string {
 	//add parsing of params
-	users := strings.Split(ca.Text, " ")
+	users := strings.Split(params, " ")
 	rg, _ := regexp.Compile("<@([a-z0-9]+)|([a-z0-9]+)>")
 	for _, u := range users {
 		if !rg.MatchString(u) {
-			r.conf.Translate.WrongUsernameError
+			logrus.Error(r.conf.Translate.WrongUsernameError)
 			continue
 		}
 		userID, userName := utils.SplitUser(u)
@@ -498,7 +500,7 @@ func (r *REST) showTimeTable(accessLevel int, channelID, params string) string {
 		}
 		fmt.Sprintf(r.conf.Translate.TimetableShow, userName, tt.Show())
 	}
-	return nil
+	return ""
 }
 
 func (r *REST) removeTimeTable(accessLevel int, channelID, params string) string {
@@ -508,11 +510,11 @@ func (r *REST) removeTimeTable(accessLevel int, channelID, params string) string
 		return r.conf.Translate.AccessAtLeastPM
 	}
 
-	users := strings.Split(ca.Text, " ")
+	users := strings.Split(params, " ")
 	rg, _ := regexp.Compile("<@([a-z0-9]+)|([a-z0-9]+)>")
 	for _, u := range users {
 		if !rg.MatchString(u) {
-			r.conf.Translate.WrongUsernameError
+			logrus.Error(r.conf.Translate.WrongUsernameError)
 			continue
 		}
 		userID, userName := utils.SplitUser(u)
@@ -534,7 +536,7 @@ func (r *REST) removeTimeTable(accessLevel int, channelID, params string) string
 		}
 		fmt.Sprintf(r.conf.Translate.TimetableDeleted, userName)
 	}
-	return nil
+	return ""
 }
 
 func (r *REST) reportByProject(accessLevel int, channelID, params string) string {
@@ -543,7 +545,7 @@ func (r *REST) reportByProject(accessLevel int, channelID, params string) string
 		return r.conf.Translate.AccessAtLeastPM
 	}
 
-	commandParams := strings.Fields(ca.Text)
+	commandParams := strings.Fields(params)
 	if len(commandParams) != 3 {
 		return r.conf.Translate.WrongNArgs
 	}
@@ -591,7 +593,7 @@ func (r *REST) reportByProject(accessLevel int, channelID, params string) string
 
 func (r *REST) reportByUser(accessLevel int, channelID, params string) string {
 
-	commandParams := strings.Fields(ca.Text)
+	commandParams := strings.Fields(params)
 	if len(commandParams) != 3 {
 		return r.conf.Translate.WrongNArgs
 	}
@@ -601,7 +603,8 @@ func (r *REST) reportByUser(accessLevel int, channelID, params string) string {
 		return "User does not exist!"
 	}
 
-	if f.Get("user_id") != user.UserID && accessLevel > 2 {
+	//if f.Get("user_id") != user.UserID && accessLevel > 2 { was removed, need to fix bug
+	if accessLevel > 2 {
 		return r.conf.Translate.AccessAtLeastAdminOrOwner
 	}
 
@@ -636,7 +639,7 @@ func (r *REST) reportByUser(accessLevel int, channelID, params string) string {
 
 func (r *REST) reportByProjectAndUser(accessLevel int, channelID, params string) string {
 
-	commandParams := strings.Fields(ca.Text)
+	commandParams := strings.Fields(params)
 	if len(commandParams) != 4 {
 		return r.conf.Translate.WrongNArgs
 	}
@@ -665,7 +668,11 @@ func (r *REST) reportByProjectAndUser(accessLevel int, channelID, params string)
 		return fmt.Sprintf(r.conf.Translate.CanNotFindMember, user.UserID)
 	}
 
-	if (f.Get("user_id") != member.UserID && channelID != member.ChannelID) && accessLevel > 3 {
+	// if (f.Get("user_id") != member.UserID && channelID != member.ChannelID) && accessLevel > 3 {
+	// 	return r.conf.Translate.AccessAtLeastPMOrOwner
+	// } Need to fix bug!
+
+	if accessLevel > 3 {
 		return r.conf.Translate.AccessAtLeastPMOrOwner
 	}
 
