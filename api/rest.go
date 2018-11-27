@@ -75,50 +75,55 @@ func (r *REST) handleCommands(c echo.Context) error {
 		return c.String(http.StatusOK, err.Error())
 	}
 
-	_, err = r.db.SelectChannel(form.ChannelID)
+	return c.String(http.StatusOK, r.implementCommands(form))
+
+}
+
+func (r *REST) implementCommands(form FullSlackForm) string {
+	_, err := r.db.SelectChannel(form.ChannelID)
 	if err != nil {
 		logrus.Errorf("SelectChannel failed: %v", err)
-		return err
+		return err.Error()
 	}
 
 	if form.Command != "/comedian" {
-		return c.String(http.StatusOK, err.Error())
+		return err.Error()
 	}
 
 	accessLevel, err := r.getAccessLevel(form.UserID, form.ChannelID)
 	if err != nil {
-		return c.String(http.StatusOK, err.Error())
+		return err.Error()
 	}
 
 	command, params := utils.CommandParsing(form.Text)
 
 	switch command {
 	case "add":
-		return c.String(http.StatusOK, r.addCommand(accessLevel, form.ChannelID, params))
+		return r.addCommand(accessLevel, form.ChannelID, params)
 	case "list":
-		return c.String(http.StatusOK, r.listCommand(form.ChannelID, params))
+		return r.listCommand(form.ChannelID, params)
 	case "delete":
-		return c.String(http.StatusOK, r.deleteCommand(accessLevel, form.ChannelID, params))
+		return r.deleteCommand(accessLevel, form.ChannelID, params)
 	case "add_deadline":
-		return c.String(http.StatusOK, r.addTime(accessLevel, form.ChannelID, params))
+		return r.addTime(accessLevel, form.ChannelID, params)
 	case "remove_deadline":
-		return c.String(http.StatusOK, r.removeTime(accessLevel, form.ChannelID))
+		return r.removeTime(accessLevel, form.ChannelID)
 	case "show_deadline":
-		return c.String(http.StatusOK, r.showTime(form.ChannelID))
+		return r.showTime(form.ChannelID)
 	case "add_timetable":
-		return c.String(http.StatusOK, r.addTimeTable(accessLevel, form.ChannelID, params))
+		return r.addTimeTable(accessLevel, form.ChannelID, params)
 	case "remove_timetable":
-		return c.String(http.StatusOK, r.removeTimeTable(accessLevel, form.ChannelID, params))
+		return r.removeTimeTable(accessLevel, form.ChannelID, params)
 	case "show_timetable":
-		return c.String(http.StatusOK, r.showTimeTable(accessLevel, form.ChannelID, params))
+		return r.showTimeTable(accessLevel, form.ChannelID, params)
 	case "report_on_user":
-		return c.String(http.StatusOK, r.addTimeTable(accessLevel, form.ChannelID, params))
+		return r.addTimeTable(accessLevel, form.ChannelID, params)
 	case "report_on_project":
-		return c.String(http.StatusOK, r.removeTimeTable(accessLevel, form.ChannelID, params))
+		return r.removeTimeTable(accessLevel, form.ChannelID, params)
 	case "report_on_user_in_project":
-		return c.String(http.StatusOK, r.showTimeTable(accessLevel, form.ChannelID, params))
+		return r.showTimeTable(accessLevel, form.ChannelID, params)
 	default:
-		return c.String(http.StatusOK, r.displayHelpText())
+		return r.displayHelpText()
 	}
 }
 
