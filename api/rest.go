@@ -1,10 +1,8 @@
 package api
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -17,19 +15,16 @@ import (
 	"github.com/maddevsio/comedian/reporting"
 	"github.com/maddevsio/comedian/storage"
 	"github.com/maddevsio/comedian/utils"
-	"github.com/nlopes/slack"
 	"github.com/sirupsen/logrus"
 )
 
 // REST struct used to handle slack requests (slash commands)
 type REST struct {
-	db      storage.Storage
-	echo    *echo.Echo
-	conf    config.Config
-	decoder *schema.Decoder
-	report  *reporting.Reporter
-	slack   *chat.Slack
-	api     *slack.Client
+	db     storage.Storage
+	echo   *echo.Echo
+	conf   config.Config
+	report *reporting.Reporter
+	slack  *chat.Slack
 }
 
 // FullSlackForm struct used for parsing full payload from slack
@@ -45,149 +40,144 @@ type FullSlackForm struct {
 // NewRESTAPI creates API for Slack commands
 func NewRESTAPI(slack *chat.Slack) (*REST, error) {
 	e := echo.New()
-	decoder := schema.NewDecoder()
-	decoder.IgnoreUnknownKeys(true)
 	rep := reporting.NewReporter(slack)
 
 	r := &REST{
-		echo:    e,
-		decoder: decoder,
-		report:  rep,
-		db:      slack.DB,
-		slack:   slack,
-		api:     slack.API,
-		conf:    slack.Conf,
+		echo:   e,
+		report: rep,
+		db:     slack.DB,
+		slack:  slack,
+		conf:   slack.Conf,
 	}
 
 	r.echo.POST("/commands", r.handleCommands)
 	return r, nil
 }
 
-// Start starts http server
+//Start starts http server that listens on configured port (default localhost 8080)
 func (r *REST) Start() error {
 	return r.echo.Start(r.conf.HTTPBindAddr)
 }
 
 func (r *REST) handleCommands(c echo.Context) error {
-	form, err := c.FormParams()
+	var form FullSlackForm
+
+	urlValues, err := c.FormParams()
 	if err != nil {
 		logrus.Errorf("rest: c.FormParams failed: %v\n", err)
-	}
-	fullForm := FullSlackForm{
-		Command:     form.Get("command"),
-		Text:        form.Get("text"),
-		ChannelID:   form.Get("channel_id"),
-		ChannelName: form.Get("channel_name"),
-		UserID:      form.Get("user_id"),
-		UserName:    form.Get("user_name"),
+		return c.String(http.StatusOK, err.Error())
 	}
 
-	if fullForm.Command != "/comedian" {
-		return c.String(http.StatusNotImplemented, "Not implemented")
-	} else {
-		fmt.Println("Correct Slash Command")
+	decoder := schema.NewDecoder()
+	decoder.IgnoreUnknownKeys(true)
+
+	if err := decoder.Decode(&form, urlValues); err != nil {
+		return c.String(http.StatusOK, err.Error())
 	}
 
-	// switch {
-	// case commandAdd:
-	// 	return r.addCommand(c, form)
-	// case commandList:
-	// 	return r.listCommand(c, form)
-	// case commandDelete:
-	// 	return r.deleteCommand(c, form)
-	// case commandAddTime:
-	// 	return r.addTime(c, form)
-	// case commandRemoveTime:
-	// 	return r.removeTime(c, form)
-	// case commandListTime:
-	// 	return r.listTime(c, form)
-	// case commandAddTimeTable:
-	// 	return r.addTimeTable(c, form)
-	// case commandRemoveTimeTable:
-	// 	return r.removeTimeTable(c, form)
-	// case commandShowTimeTable:
-	// 	return r.showTimeTable(c, form)
-	// case commandReportByProject:
-	// 	return r.reportByProject(c, form)
-	// case commandReportByUser:
-	// 	return r.reportByUser(c, form)
-	// case commandReportByUserInProject:
-	// 	return r.reportByProjectAndUser(c, form)
-	// }
+	_, err = r.db.SelectChannel(form.ChannelID)
+	if err != nil {
+		logrus.Errorf("SelectChannel failed: %v", err)
+		return err
+	}
+
+	if form.Command != "/comedian" {
+		return c.String(http.StatusOK, err.Error())
+	}
+
+	accessLevel, err := r.getAccessLevel(form.UserID, form.ChannelID)
+	if err != nil {
+		return c.String(http.StatusOK, err.Error())
+	}
+
+	command, params := utils.CommandParsing(form.Text)
+
+	switch command {
+	case "add":
+		return c.String(http.StatusOK, r.addCommand(accessLevel, form.ChannelID, params))
+	case "list":
+		return c.String(http.StatusOK, r.listCommand(accessLevel, form.ChannelID, params))
+	case "delete":
+		return c.String(http.StatusOK, r.deleteCommand(accessLevel, form.ChannelID, params))
+	case "add_deadline":
+		return c.String(http.StatusOK, r.addTime(accessLevel, form.ChannelID, params))
+	case "remove_deadline":
+		return c.String(http.StatusOK, r.removeTime(accessLevel, form.ChannelID, params))
+	case "show_deadline":
+		return c.String(http.StatusOK, r.showTime(accessLevel, form.ChannelID, params))
+	case "add_timetable":
+		return c.String(http.StatusOK, r.addTimeTable(accessLevel, form.ChannelID, params))
+	case "remove_timetable":
+		return c.String(http.StatusOK, r.removeTimeTable(accessLevel, form.ChannelID, params))
+	case "show_timetable":
+		return c.String(http.StatusOK, r.showTimeTable(accessLevel, form.ChannelID, params))
+	case "report_on_user":
+		return c.String(http.StatusOK, r.addTimeTable(accessLevel, form.ChannelID, params))
+	case "report_on_project":
+		return c.String(http.StatusOK, r.removeTimeTable(accessLevel, form.ChannelID, params))
+	case "report_on_user_in_project":
+		return c.String(http.StatusOK, r.showTimeTable(accessLevel, form.ChannelID, params))
+	}
+
 	return nil
 }
 
-func (r *REST) addCommand(c echo.Context, f url.Values) error {
-	members, role, channel, accessLevel, err := r.processCommand(c, f)
-	if err != nil {
-		return c.String(http.StatusOK, r.conf.Translate.SomethingWentWrong)
-	}
+func (r *REST) addCommand(accessLevel int, channelID, params string) string {
+	//add parsing of params
 	switch role {
 	case "admin", "админ":
 		if accessLevel > 2 {
-			return c.String(http.StatusOK, r.conf.Translate.AccessAtLeastAdmin)
+			return r.conf.Translate.AccessAtLeastAdmin
 		}
-		return c.String(http.StatusOK, r.addAdmins(members))
+		return r.addAdmins(members)
 	case "developer", "разработчик", "":
 		if accessLevel > 3 {
-			return c.String(http.StatusOK, r.conf.Translate.AccessAtLeastPM)
+			return r.conf.Translate.AccessAtLeastPM
 		}
-		return c.String(http.StatusOK, r.addMembers(members, "developer", channel))
+		return r.addMembers(members, "developer", channelID)
 	case "pm", "пм":
 		if accessLevel > 2 {
-			return c.String(http.StatusOK, r.conf.Translate.AccessAtLeastAdmin)
+			return r.conf.Translate.AccessAtLeastAdmin
 		}
-		return c.String(http.StatusOK, r.addMembers(members, "pm", channel))
+		return r.addMembers(members, "pm", channelID)
 	default:
-		return c.String(http.StatusOK, r.conf.Translate.NeedCorrectUserRole)
+		return r.conf.Translate.NeedCorrectUserRole
 	}
 }
 
-func (r *REST) listCommand(c echo.Context, f url.Values) error {
-	ca, err := r.validateRequest(c, f)
-	if err != nil {
-		logrus.Errorf("Validate Request Failed: %v", err)
-		return c.String(http.StatusOK, err.Error())
-	}
-
-	role := ca.Text
-
+func (r *REST) listCommand(accessLevel int, channelID, params string) string {
+	//add parsing of params
 	switch role {
 	case "admin", "админ":
-		return c.String(http.StatusOK, r.listAdmins())
+		return r.listAdmins()
 	case "developer", "разработчик", "":
-		return c.String(http.StatusOK, r.listMembers(ca.ChannelID, "developer"))
+		return r.listMembers(ChannelID, "developer")
 	case "pm", "пм":
-		return c.String(http.StatusOK, r.listMembers(ca.ChannelID, "pm"))
+		return r.listMembers(ChannelID, "pm")
 	default:
-		return c.String(http.StatusOK, r.conf.Translate.NeedCorrectUserRole)
+		return r.conf.Translate.NeedCorrectUserRole
 	}
-
 }
 
-func (r *REST) deleteCommand(c echo.Context, f url.Values) error {
-
-	users, role, channel, accessLevel, err := r.processCommand(c, f)
-	if err != nil {
-		return c.String(http.StatusOK, err.Error())
-	}
+func (r *REST) deleteCommand(accessLevel int, channelID, params string) string {
+	//add parsing of params
 	switch role {
 	case "admin", "админ":
 		if accessLevel > 2 {
-			return c.String(http.StatusOK, r.conf.Translate.AccessAtLeastAdmin)
+			return r.conf.Translate.AccessAtLeastAdmin
 		}
-		return c.String(http.StatusOK, r.deleteAdmins(users))
+		return r.deleteAdmins(users)
 	case "developer", "разработчик", "pm", "пм", "":
 		if accessLevel > 3 {
-			return c.String(http.StatusOK, r.conf.Translate.AccessAtLeastPM)
+			return r.conf.Translate.AccessAtLeastPM
 		}
-		return c.String(http.StatusOK, r.deleteMembers(users, channel))
+		return r.deleteMembers(users, channelID)
 	default:
-		return c.String(http.StatusOK, r.conf.Translate.NeedCorrectUserRole)
+		return r.conf.Translate.NeedCorrectUserRole
 	}
 }
 
-func (r *REST) addMembers(users []string, role, channel string) string {
+func (r *REST) addMembers(users []string, role, channelID string) string {
 	var failed, exist, added, text string
 
 	rg, _ := regexp.Compile("<@([a-z0-9]+)|([a-z0-9]+)>")
@@ -198,17 +188,17 @@ func (r *REST) addMembers(users []string, role, channel string) string {
 			continue
 		}
 		userID, _ := utils.SplitUser(u)
-		user, err := r.db.FindChannelMemberByUserID(userID, channel)
+		user, err := r.db.FindChannelMemberByUserID(userID, channelID)
 		if err != nil {
 			logrus.Errorf("Rest FindChannelMemberByUserID failed: %v", err)
 			chanMember, _ := r.db.CreateChannelMember(model.ChannelMember{
 				UserID:        userID,
-				ChannelID:     channel,
+				ChannelID:     channelID,
 				RoleInChannel: role,
 			})
 			logrus.Infof("ChannelMember created! ID:%v", chanMember.ID)
 		}
-		if user.UserID == userID && user.ChannelID == channel {
+		if user.UserID == userID && user.ChannelID == channelID {
 			exist += u
 			continue
 		}
@@ -270,8 +260,8 @@ func (r *REST) addAdmins(users []string) string {
 	return text
 }
 
-func (r *REST) listMembers(channel, role string) string {
-	members, err := r.db.ListChannelMembersByRole(channel, role)
+func (r *REST) listMembers(channelID, role string) string {
+	members, err := r.db.ListChannelMembersByRole(channelID, role)
 	if err != nil {
 		return fmt.Sprintf("failed to list members :%v\n", err)
 	}
@@ -306,7 +296,7 @@ func (r *REST) listAdmins() string {
 	return fmt.Sprintf(r.conf.Translate.ListAdmins, strings.Join(userNames, ", "))
 }
 
-func (r *REST) deleteMembers(members []string, channel string) string {
+func (r *REST) deleteMembers(members []string, channelID string) string {
 	var failed, deleted, text string
 
 	rg, _ := regexp.Compile("<@([a-z0-9]+)|([a-z0-9]+)>")
@@ -317,13 +307,13 @@ func (r *REST) deleteMembers(members []string, channel string) string {
 			continue
 		}
 		userID, _ := utils.SplitUser(u)
-		user, err := r.db.FindChannelMemberByUserID(userID, channel)
+		user, err := r.db.FindChannelMemberByUserID(userID, channelID)
 		if err != nil {
 			logrus.Errorf("rest: FindChannelMemberByUserID failed: %v\n", err)
 			failed += u
 			continue
 		}
-		r.db.DeleteChannelMember(user.UserID, channel)
+		r.db.DeleteChannelMember(user.UserID, channelID)
 		deleted += u
 	}
 
@@ -377,109 +367,80 @@ func (r *REST) deleteAdmins(users []string) string {
 	return text
 }
 
-func (r *REST) addTime(c echo.Context, f url.Values) error {
-	ca, err := r.validateRequest(c, f)
-	if err != nil {
-		logrus.Errorf("Validate Request Failed: %v", err)
-		return c.String(http.StatusOK, err.Error())
-	}
-
-	accessLevel, _ := r.getAccessLevel(f.Get("user_id"), f.Get("channel_id"))
-	logrus.Infof("Access level for %v in %v is %v", f.Get("user_id"), f.Get("channel_id"), accessLevel)
+func (r *REST) addTime(accessLevel int, channelID, params string) string {
+	//add parsing of params
 	if accessLevel > 3 {
-		return c.String(http.StatusOK, r.conf.Translate.AccessAtLeastPM)
+		return r.conf.Translate.AccessAtLeastPM
 	}
 
 	timeInt, err := utils.ParseTimeTextToInt(ca.Text)
 	if err != nil {
-		return c.String(http.StatusOK, err.Error())
+		return err.Error()
 	}
-	err = r.db.CreateStandupTime(timeInt, ca.ChannelID)
+	err = r.db.CreateStandupTime(timeInt, channelID)
 	if err != nil {
 		logrus.Errorf("rest: CreateStandupTime failed: %v\n", err)
-		return c.String(http.StatusOK, r.conf.Translate.SomethingWentWrong)
+		return r.conf.Translate.SomethingWentWrong
 	}
-	channelMembers, err := r.db.ListChannelMembers(ca.ChannelID)
+	channelMembers, err := r.db.ListChannelMembers(channelID)
 	if err != nil {
 		logrus.Errorf("rest: ListChannelMembers failed: %v\n", err)
 	}
 	if len(channelMembers) == 0 {
-		return c.String(http.StatusOK, fmt.Sprintf(r.conf.Translate.AddStandupTimeNoUsers, timeInt))
+		return fmt.Sprintf(r.conf.Translate.AddStandupTimeNoUsers, timeInt)
 	}
-	return c.String(http.StatusOK, fmt.Sprintf(r.conf.Translate.AddStandupTime, timeInt))
+	return fmt.Sprintf(r.conf.Translate.AddStandupTime, timeInt)
 }
 
-func (r *REST) removeTime(c echo.Context, f url.Values) error {
-	ca, err := r.validateRequest(c, f)
-	if err != nil {
-		logrus.Errorf("Validate Request Failed: %v", err)
-		return c.String(http.StatusOK, err.Error())
-	}
-
-	accessLevel, _ := r.getAccessLevel(f.Get("user_id"), f.Get("channel_id"))
-	logrus.Infof("Access level for %v in %v is %v", f.Get("user_id"), f.Get("channel_id"), accessLevel)
-	if accessLevel > 3 {
-		return c.String(http.StatusOK, r.conf.Translate.AccessAtLeastPM)
-	}
-
-	err = r.db.DeleteStandupTime(ca.ChannelID)
-	if err != nil {
-		logrus.Errorf("rest: DeleteStandupTime failed: %v\n", err)
-		return c.String(http.StatusOK, r.conf.Translate.SomethingWentWrong)
-	}
-	st, err := r.db.ListChannelMembers(ca.ChannelID)
-	if len(st) != 0 {
-		return c.String(http.StatusOK, r.conf.Translate.RemoveStandupTimeWithUsers)
-	}
-	return c.String(http.StatusOK, fmt.Sprintf(r.conf.Translate.RemoveStandupTime, ca.ChannelName))
-}
-
-func (r *REST) listTime(c echo.Context, f url.Values) error {
-	ca, err := r.validateRequest(c, f)
-	if err != nil {
-		logrus.Errorf("Validate Request Failed: %v", err)
-		return c.String(http.StatusOK, err.Error())
-	}
-
-	standupTime, err := r.db.GetChannelStandupTime(ca.ChannelID)
+func (r *REST) showTime(accessLevel int, channelID, params string) string {
+	standupTime, err := r.db.GetChannelStandupTime(channelID)
 	if err != nil || standupTime == int64(0) {
 		logrus.Errorf("GetChannelStandupTime failed: %v", err)
-		return c.String(http.StatusOK, r.conf.Translate.ShowNoStandupTime)
+		return r.conf.Translate.ShowNoStandupTime
 	}
-	return c.String(http.StatusOK, fmt.Sprintf(r.conf.Translate.ShowStandupTime, standupTime))
+	return fmt.Sprintf(r.conf.Translate.ShowStandupTime, standupTime)
 }
 
-func (r *REST) addTimeTable(c echo.Context, f url.Values) error {
-	ca, err := r.validateRequest(c, f)
-	if err != nil {
-		logrus.Errorf("Validate Request Failed: %v", err)
-		return c.String(http.StatusOK, err.Error())
-	}
-
-	accessLevel, _ := r.getAccessLevel(f.Get("user_id"), f.Get("channel_id"))
-	logrus.Infof("Access level for %v in %v is %v", f.Get("user_id"), f.Get("channel_id"), accessLevel)
+func (r *REST) removeTime(accessLevel int, channelID, params string) string {
 	if accessLevel > 3 {
-		return c.String(http.StatusOK, r.conf.Translate.AccessAtLeastPM)
+		return r.conf.Translate.AccessAtLeastPM
+	}
+	err := r.db.DeleteStandupTime(channelID)
+	if err != nil {
+		logrus.Errorf("rest: DeleteStandupTime failed: %v\n", err)
+		return r.conf.Translate.SomethingWentWrong
+	}
+	st, err := r.db.ListChannelMembers(channelID)
+	if len(st) != 0 {
+		return r.conf.Translate.RemoveStandupTimeWithUsers
+	}
+	return fmt.Sprintf(r.conf.Translate.RemoveStandupTime)
+}
+
+func (r *REST) addTimeTable(accessLevel int, channelID, params string) string {
+	//add parsing of params
+	if accessLevel > 3 {
+		return r.conf.Translate.AccessAtLeastPM
 	}
 
 	usersText, weekdays, time, err := utils.SplitTimeTalbeCommand(ca.Text, r.conf.Translate.DaysDivider, r.conf.Translate.TimeDivider)
 	if err != nil {
-		return c.String(http.StatusOK, err.Error())
+		return err.Error()
 	}
 	users := strings.Split(usersText, " ")
 	rg, _ := regexp.Compile("<@([a-z0-9]+)|([a-z0-9]+)>")
 	for _, u := range users {
 		if !rg.MatchString(u) {
-			c.String(http.StatusOK, r.conf.Translate.WrongUsernameError)
+			logrus.Error(r.conf.Translate.WrongUsernameError)
 			continue
 		}
 		userID, userName := utils.SplitUser(u)
 
-		m, err := r.db.FindChannelMemberByUserID(userID, f.Get("channel_id"))
+		m, err := r.db.FindChannelMemberByUserID(userID, channelID)
 		if err != nil {
 			m, err = r.db.CreateChannelMember(model.ChannelMember{
 				UserID:    userID,
-				ChannelID: f.Get("channel_id"),
+				ChannelID: channelID,
 			})
 			if err != nil {
 				continue
@@ -495,278 +456,246 @@ func (r *REST) addTimeTable(c echo.Context, f url.Values) error {
 			ttNew = utils.PrepareTimeTable(ttNew, weekdays, time)
 			ttNew, err = r.db.UpdateTimeTable(ttNew)
 			if err != nil {
-				c.String(http.StatusOK, fmt.Sprintf(r.conf.Translate.CanNotUpdateTimetable, userName, err))
+				fmt.Sprintf(r.conf.Translate.CanNotUpdateTimetable, userName, err)
 				continue
 			}
 			logrus.Infof("Timetable created id:%v", ttNew.ID)
-			c.String(http.StatusOK, fmt.Sprintf(r.conf.Translate.TimetableCreated, userID, ttNew.Show()))
+			fmt.Sprintf(r.conf.Translate.TimetableCreated, userID, ttNew.Show())
 			continue
 		}
 		tt = utils.PrepareTimeTable(tt, weekdays, time)
 		tt, err = r.db.UpdateTimeTable(tt)
 		if err != nil {
-			c.String(http.StatusOK, fmt.Sprintf(r.conf.Translate.CanNotUpdateTimetable, userName, err))
+			fmt.Sprintf(r.conf.Translate.CanNotUpdateTimetable, userName, err)
 			continue
 		}
 		logrus.Infof("Timetable updated id:%v", tt.ID)
-		c.String(http.StatusOK, fmt.Sprintf(r.conf.Translate.TimetableUpdated, userID, tt.Show()))
+		fmt.Sprintf(r.conf.Translate.TimetableUpdated, userID, tt.Show())
 	}
 	return nil
 }
 
-func (r *REST) showTimeTable(c echo.Context, f url.Values) error {
-	ca, err := r.validateRequest(c, f)
-	if err != nil {
-		logrus.Errorf("Validate Request Failed: %v", err)
-		return c.String(http.StatusOK, err.Error())
-	}
-
+func (r *REST) showTimeTable(accessLevel int, channelID, params string) string {
+	//add parsing of params
 	users := strings.Split(ca.Text, " ")
 	rg, _ := regexp.Compile("<@([a-z0-9]+)|([a-z0-9]+)>")
 	for _, u := range users {
 		if !rg.MatchString(u) {
-			c.String(http.StatusOK, r.conf.Translate.WrongUsernameError)
+			r.conf.Translate.WrongUsernameError
 			continue
 		}
 		userID, userName := utils.SplitUser(u)
 
-		m, err := r.db.FindChannelMemberByUserID(userID, f.Get("channel_id"))
+		m, err := r.db.FindChannelMemberByUserID(userID, channelID)
 		if err != nil {
-			c.String(http.StatusOK, fmt.Sprintf(r.conf.Translate.NotAStanduper, userName))
+			fmt.Sprintf(r.conf.Translate.NotAStanduper, userName)
 			continue
 		}
 		tt, err := r.db.SelectTimeTable(m.ID)
 		if err != nil {
-			c.String(http.StatusOK, fmt.Sprintf(r.conf.Translate.NoTimetableSet, userName))
+			fmt.Sprintf(r.conf.Translate.NoTimetableSet, userName)
 			continue
 		}
-		c.String(http.StatusOK, fmt.Sprintf(r.conf.Translate.TimetableShow, userName, tt.Show()))
+		fmt.Sprintf(r.conf.Translate.TimetableShow, userName, tt.Show())
 	}
 	return nil
 }
 
-func (r *REST) removeTimeTable(c echo.Context, f url.Values) error {
-	ca, err := r.validateRequest(c, f)
-	if err != nil {
-		logrus.Errorf("Validate Request Failed: %v", err)
-		return c.String(http.StatusOK, err.Error())
-	}
+func (r *REST) removeTimeTable(accessLevel int, channelID, params string) string {
+	//add parsing of params
 
-	accessLevel, _ := r.getAccessLevel(f.Get("user_id"), f.Get("channel_id"))
-	logrus.Infof("Access level for %v in %v is %v", f.Get("user_id"), f.Get("channel_id"), accessLevel)
 	if accessLevel > 3 {
-		return c.String(http.StatusOK, r.conf.Translate.AccessAtLeastPM)
+		return r.conf.Translate.AccessAtLeastPM
 	}
 
 	users := strings.Split(ca.Text, " ")
 	rg, _ := regexp.Compile("<@([a-z0-9]+)|([a-z0-9]+)>")
 	for _, u := range users {
 		if !rg.MatchString(u) {
-			c.String(http.StatusOK, r.conf.Translate.WrongUsernameError)
+			r.conf.Translate.WrongUsernameError
 			continue
 		}
 		userID, userName := utils.SplitUser(u)
 
-		m, err := r.db.FindChannelMemberByUserID(userID, f.Get("channel_id"))
+		m, err := r.db.FindChannelMemberByUserID(userID, channelID)
 		if err != nil {
-			c.String(http.StatusOK, fmt.Sprintf(r.conf.Translate.NotAStanduper, userName))
+			fmt.Sprintf(r.conf.Translate.NotAStanduper, userName)
 			continue
 		}
 		tt, err := r.db.SelectTimeTable(m.ID)
 		if err != nil {
-			c.String(http.StatusOK, fmt.Sprintf(r.conf.Translate.NoTimetableSet, userName))
+			fmt.Sprintf(r.conf.Translate.NoTimetableSet, userName)
 			continue
 		}
 		err = r.db.DeleteTimeTable(tt.ID)
 		if err != nil {
-			c.String(http.StatusOK, fmt.Sprintf(r.conf.Translate.CanNotDeleteTimetable, userName))
+			fmt.Sprintf(r.conf.Translate.CanNotDeleteTimetable, userName)
 			continue
 		}
-		c.String(http.StatusOK, fmt.Sprintf(r.conf.Translate.TimetableDeleted, userName))
+		fmt.Sprintf(r.conf.Translate.TimetableDeleted, userName)
 	}
 	return nil
 }
 
-func (r *REST) reportByProject(c echo.Context, f url.Values) error {
-	ca, err := r.validateRequest(c, f)
-	if err != nil {
-		logrus.Errorf("Validate Request Failed: %v", err)
-		return c.String(http.StatusOK, err.Error())
-	}
+func (r *REST) reportByProject(accessLevel int, channelID, params string) string {
 
-	accessLevel, _ := r.getAccessLevel(f.Get("user_id"), f.Get("channel_id"))
-	logrus.Infof("Access level for %v in %v is %v", f.Get("user_id"), f.Get("channel_id"), accessLevel)
 	if accessLevel > 3 {
-		return c.String(http.StatusOK, r.conf.Translate.AccessAtLeastPM)
+		return r.conf.Translate.AccessAtLeastPM
 	}
 
 	commandParams := strings.Fields(ca.Text)
 	if len(commandParams) != 3 {
-		return c.String(http.StatusOK, r.conf.Translate.WrongNArgs)
+		return r.conf.Translate.WrongNArgs
 	}
 	channelName := strings.Replace(commandParams[0], "#", "", -1)
 	channelID, err := r.db.GetChannelID(channelName)
 	if err != nil {
 		logrus.Errorf("rest: GetChannelID failed: %v\n", err)
-		return c.String(http.StatusOK, "Неверное название проекта!")
+		return "Неверное название проекта!"
 	}
 
 	channel, err := r.db.SelectChannel(channelID)
 	if err != nil {
 		logrus.Errorf("rest: SelectChannel failed: %v\n", err)
-		return c.String(http.StatusOK, err.Error())
+		return err.Error()
 	}
 
 	dateFrom, err := time.Parse("2006-01-02", commandParams[1])
 	if err != nil {
 		logrus.Errorf("rest: time.Parse failed: %v\n", err)
-		return c.String(http.StatusOK, err.Error())
+		return err.Error()
 	}
 	dateTo, err := time.Parse("2006-01-02", commandParams[2])
 	if err != nil {
 		logrus.Errorf("rest: time.Parse failed: %v\n", err)
-		return c.String(http.StatusOK, err.Error())
+		return err.Error()
 	}
 
 	report, err := r.report.StandupReportByProject(channel, dateFrom, dateTo)
 	if err != nil {
 		logrus.Errorf("rest: StandupReportByProject: %v\n", err)
-		return c.String(http.StatusOK, err.Error())
+		return err.Error()
 	}
 
 	text := ""
 	text += report.ReportHead
 	if len(report.ReportBody) == 0 {
 		text += r.conf.Translate.ReportNoData
-		return c.String(http.StatusOK, text)
+		return text
 	}
 	for _, t := range report.ReportBody {
 		text += t.Text
 	}
-	return c.String(http.StatusOK, text)
+	return text
 }
 
-func (r *REST) reportByUser(c echo.Context, f url.Values) error {
-	ca, err := r.validateRequest(c, f)
-	if err != nil {
-		logrus.Errorf("Validate Request Failed: %v", err)
-		return c.String(http.StatusOK, err.Error())
-	}
+func (r *REST) reportByUser(accessLevel int, channelID, params string) string {
 
 	commandParams := strings.Fields(ca.Text)
 	if len(commandParams) != 3 {
-		return c.String(http.StatusOK, r.conf.Translate.WrongNArgs)
+		return r.conf.Translate.WrongNArgs
 	}
 	username := strings.Replace(commandParams[0], "@", "", -1)
 	user, err := r.db.SelectUserByUserName(username)
 	if err != nil {
-		return c.String(http.StatusOK, "User does not exist!")
+		return "User does not exist!"
 	}
 
-	accessLevel, _ := r.getAccessLevel(f.Get("user_id"), f.Get("channel_id"))
-	logrus.Infof("Access level for %v in %v is %v", f.Get("user_id"), f.Get("channel_id"), accessLevel)
 	if f.Get("user_id") != user.UserID && accessLevel > 2 {
-		return c.String(http.StatusOK, r.conf.Translate.AccessAtLeastAdminOrOwner)
+		return r.conf.Translate.AccessAtLeastAdminOrOwner
 	}
 
 	dateFrom, err := time.Parse("2006-01-02", commandParams[1])
 	if err != nil {
 		logrus.Errorf("rest: time.Parse failed: %v\n", err)
-		return c.String(http.StatusOK, err.Error())
+		return err.Error()
 	}
 	dateTo, err := time.Parse("2006-01-02", commandParams[2])
 	if err != nil {
 		logrus.Errorf("rest: time.Parse failed: %v\n", err)
-		return c.String(http.StatusOK, err.Error())
+		return err.Error()
 	}
 
 	report, err := r.report.StandupReportByUser(user.UserID, dateFrom, dateTo)
 	if err != nil {
 		logrus.Errorf("rest: StandupReportByUser failed: %v\n", err)
-		return c.String(http.StatusOK, err.Error())
+		return err.Error()
 	}
 
 	text := ""
 	text += report.ReportHead
 	if len(report.ReportBody) == 0 {
 		text += r.conf.Translate.ReportNoData
-		return c.String(http.StatusOK, text)
+		return text
 	}
 	for _, t := range report.ReportBody {
 		text += t.Text
 	}
-	return c.String(http.StatusOK, text)
+	return text
 }
 
-func (r *REST) reportByProjectAndUser(c echo.Context, f url.Values) error {
-	ca, err := r.validateRequest(c, f)
-	if err != nil {
-		logrus.Errorf("Validate Request Failed: %v", err)
-		return c.String(http.StatusOK, err.Error())
-	}
+func (r *REST) reportByProjectAndUser(accessLevel int, channelID, params string) string {
 
 	commandParams := strings.Fields(ca.Text)
 	if len(commandParams) != 4 {
-		return c.String(http.StatusOK, r.conf.Translate.WrongNArgs)
+		return r.conf.Translate.WrongNArgs
 	}
 
 	channelName := strings.Replace(commandParams[0], "#", "", -1)
 	channelID, err := r.db.GetChannelID(channelName)
 	if err != nil {
 		logrus.Errorf("rest: GetChannelID failed: %v\n", err)
-		return c.String(http.StatusOK, r.conf.Translate.WrongProjectName)
+		return r.conf.Translate.WrongProjectName
 	}
 
 	channel, err := r.db.SelectChannel(channelID)
 	if err != nil {
 		logrus.Errorf("rest: SelectChannel failed: %v\n", err)
-		return c.String(http.StatusOK, err.Error())
+		return err.Error()
 	}
 
 	username := strings.Replace(commandParams[1], "@", "", -1)
 
 	user, err := r.db.SelectUserByUserName(username)
 	if err != nil {
-		return c.String(http.StatusOK, r.conf.Translate.NoSuchUserInWorkspace)
+		return r.conf.Translate.NoSuchUserInWorkspace
 	}
 	member, err := r.db.FindChannelMemberByUserName(user.UserName, channelID)
 	if err != nil {
-		return c.String(http.StatusOK, fmt.Sprintf(r.conf.Translate.CanNotFindMember, user.UserID))
+		return fmt.Sprintf(r.conf.Translate.CanNotFindMember, user.UserID)
 	}
 
-	accessLevel, _ := r.getAccessLevel(f.Get("user_id"), f.Get("channel_id"))
-	logrus.Infof("Access level for %v in %v is %v", f.Get("user_id"), f.Get("channel_id"), accessLevel)
-	if (f.Get("user_id") != member.UserID && f.Get("channel_id") != member.ChannelID) && accessLevel > 3 {
-		return c.String(http.StatusOK, r.conf.Translate.AccessAtLeastPMOrOwner)
+	if (f.Get("user_id") != member.UserID && channelID != member.ChannelID) && accessLevel > 3 {
+		return r.conf.Translate.AccessAtLeastPMOrOwner
 	}
 
 	dateFrom, err := time.Parse("2006-01-02", commandParams[2])
 	if err != nil {
 		logrus.Errorf("rest: time.Parse failed: %v\n", err)
-		return c.String(http.StatusOK, err.Error())
+		return err.Error()
 	}
 	dateTo, err := time.Parse("2006-01-02", commandParams[3])
 	if err != nil {
 		logrus.Errorf("rest: time.Parse failed: %v\n", err)
-		return c.String(http.StatusOK, err.Error())
+		return err.Error()
 	}
 
 	report, err := r.report.StandupReportByProjectAndUser(channel, member.UserID, dateFrom, dateTo)
 	if err != nil {
 		logrus.Errorf("rest: StandupReportByProjectAndUser failed: %v\n", err)
-		return c.String(http.StatusOK, err.Error())
+		return err.Error()
 	}
 
 	text := ""
 	text += report.ReportHead
 	if len(report.ReportBody) == 0 {
 		text += r.conf.Translate.ReportNoData
-		return c.String(http.StatusOK, text)
+		return text
 	}
 	for _, t := range report.ReportBody {
 		text += t.Text
 	}
-	return c.String(http.StatusOK, text)
+	return text
 }
 
 func (r *REST) getAccessLevel(userID, channelID string) (int, error) {
@@ -784,57 +713,4 @@ func (r *REST) getAccessLevel(userID, channelID string) (int, error) {
 		return 3, nil
 	}
 	return 4, nil
-}
-
-func (r *REST) comedianIsInChannel(channelID string) bool {
-	_, err := r.db.SelectChannel(channelID)
-	if err != nil {
-		logrus.Errorf("SelectChannel failed: %v", err)
-		return false
-	}
-	return true
-}
-
-func (r *REST) validateRequest(c echo.Context, f url.Values) (FullSlackForm, error) {
-	var ca FullSlackForm
-	if !r.comedianIsInChannel(f.Get("channel_id")) {
-		return ca, errors.New(r.conf.Translate.ComedianIsNotInChannel)
-	}
-	if err := r.decoder.Decode(&ca, f); err != nil {
-		return ca, errors.New("I could not decode your command. Please, check if it is correct and try again")
-	}
-	if err := ca.Validate(); err != nil {
-		return ca, err
-	}
-	return ca, nil
-}
-
-func (r *REST) processCommand(c echo.Context, f url.Values) ([]string, string, string, int, error) {
-	ca, err := r.validateRequest(c, f)
-	if err != nil {
-		logrus.Errorf("Validate Request Failed: %v", err)
-		return []string{}, "", "", 0, err
-	}
-
-	accessLevel, err := r.getAccessLevel(f.Get("user_id"), f.Get("channel_id"))
-	if err != nil {
-		logrus.Errorf("getAccessLevel Failed: %v", err)
-		return []string{}, "", "", 0, err
-	}
-	parts := strings.Split(ca.Text, "/")
-
-	if len(parts) > 1 {
-		users := strings.Split(strings.TrimSpace(parts[0]), " ")
-		return users, strings.TrimSpace(parts[1]), ca.ChannelID, accessLevel, nil
-	}
-	users := strings.Split(ca.Text, " ")
-	return users, "developer", ca.ChannelID, accessLevel, nil
-}
-
-// Validate validates struct
-func (c FullSlackForm) Validate() error {
-	if c.ChannelID == "" || c.ChannelName == "" {
-		return errors.New("I cannot understand which channel I am in. Please, double check if I am invited (or reinvite me one more time) to the channel and try again. Thank you!")
-	}
-	return nil
 }
