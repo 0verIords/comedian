@@ -129,6 +129,42 @@ func TestAddMembers(t *testing.T) {
 	}
 }
 
+func TestDeleteCommand(t *testing.T) {
+	r := SetUp("")
+
+	Params := []struct {
+		ID   string
+		Name string
+		Role string
+	}{
+		{"UserID1", "User1", "developer"},
+		{"UserID1", "User1", "разработчик"},
+		{"UserID1", "User1", "pm"},
+		{"UserID1", "User1", "пм"},
+		{"UserID1", "User1", ""},
+	}
+	var ParamString string
+	ParamStrings := make(map[string]string)
+	for _, p := range Params {
+		ParamString = fmt.Sprintf("<@%v|%v>/%v", p.ID, p.Name, p.Role)
+		ParamStrings[p.Role] = ParamString
+	}
+
+	testCase := []struct {
+		AccessL   int
+		ChannelID string
+		Params    string
+		Expected  string
+	}{
+		{4, "CHAN1", ParamStrings["developer"], "Access Denied! You need to be at least PM in this project to use this command!"},
+	}
+
+	for _, test := range testCase {
+		actual := r.deleteCommand(test.AccessL, test.ChannelID, test.Params)
+		assert.Equal(t, test.Expected, actual)
+	}
+}
+
 func TestListCommand(t *testing.T) {
 	//modify test to cover more cases: no users, etc.
 	r := SetUp("SuperAdminID")
