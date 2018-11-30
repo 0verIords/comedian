@@ -317,6 +317,33 @@ func TestAddTime(t *testing.T) {
 	assert.NoError(t, r.db.DeleteChannel(channel2.ID))
 }
 
+func TestShowTime(t *testing.T) {
+	r := SetUp("")
+	testCase := []struct {
+		channelName string
+		channelID   string
+		StandupTime int64
+		expected    string
+	}{
+		{"channel1", "chanId1", 100, "<!date^100^Standup time is {time}|Standup time set at 12:00>"},
+		{"channel2,", "chanId2", 0, "No standup time set for this channel yet! Please, add a standup time using `/standup_time_set` command!"},
+	}
+	for _, test := range testCase {
+		channel, err := r.db.CreateChannel(model.Channel{
+			ChannelName: test.channelName,
+			ChannelID:   test.channelID,
+		})
+		assert.NoError(t, err)
+		err = r.db.CreateStandupTime(test.StandupTime, channel.ChannelID)
+		assert.NoError(t, err)
+		actual := r.showTime(channel.ChannelID)
+		assert.Equal(t, test.expected, actual)
+		assert.NoError(t, r.db.DeleteChannel(channel.ID))
+	}
+	actual := r.showTime("doesntExist")
+	assert.Equal(t, "No standup time set for this channel yet! Please, add a standup time using `/standup_time_set` command!", actual)
+}
+
 func TestRemoveTime(t *testing.T) {
 	r := SetUp("")
 	channel, err := r.db.CreateChannel(model.Channel{
