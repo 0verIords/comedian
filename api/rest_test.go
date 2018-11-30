@@ -265,6 +265,7 @@ func TestAddTime(t *testing.T) {
 		ChannelID:   "chanId1",
 		StandupTime: int64(0),
 	})
+	assert.NoError(t, err)
 	channel2, err := r.db.CreateChannel(model.Channel{
 		ChannelName: "chan1",
 		ChannelID:   "chanId2",
@@ -301,6 +302,8 @@ func TestAddTime(t *testing.T) {
 		{2, "chanId2", "10:30", "<!date^1543552200^Standup time at {time} added, but there is no standup users for this channel|Standup time at 12:00 added, but there is no standup users for this channel>"},
 		{2, "chanId1", "10:30", "<!date^1543552200^Standup time set at {time}|Standup time set at 12:00>"},
 		{2, "", "", "Could not understand how you mention time. Please, use 24:00 hour format and try again!"},
+		//in this case channel doesn't exist,but expected line must contain "...there is no standup users for this channel..."
+		//this is not an error,because checking existance of channel not in this function
 		{2, "", "10:30", "<!date^1543552200^Standup time at {time} added, but there is no standup users for this channel|Standup time at 12:00 added, but there is no standup users for this channel>"},
 	}
 	for _, test := range testCase {
@@ -312,6 +315,56 @@ func TestAddTime(t *testing.T) {
 	}
 	assert.NoError(t, r.db.DeleteChannel(channel.ID))
 	assert.NoError(t, r.db.DeleteChannel(channel2.ID))
+}
+
+func TestRemoveTime(t *testing.T) {
+	r := SetUp("")
+	channel, err := r.db.CreateChannel(model.Channel{
+		ChannelName: "chan1",
+		ChannelID:   "chanId1",
+		StandupTime: int64(100),
+	})
+	assert.NoError(t, err)
+	channelWithMembers, err := r.db.CreateChannel(model.Channel{
+		ChannelName: "chan2",
+		ChannelID:   "chanId2",
+		StandupTime: int64(100),
+	})
+	assert.NoError(t, err)
+	//add members to this channel
+	chanMemb := []struct {
+		UserID     string
+		ChannelID  string
+		RoleInChan string
+		Created    time.Time
+	}{
+		{"uid1", "chanId2", "", time.Now()},
+		{"uid2", "chanId2", "", time.Now()},
+	}
+	for _, cm := range chanMemb {
+		r.db.CreateChannelMember(model.ChannelMember{
+			UserID:        cm.UserID,
+			ChannelID:     cm.ChannelID,
+			RoleInChannel: cm.RoleInChan,
+			Created:       cm.Created,
+		})
+	}
+
+	testCase := []struct {
+		accessL  int
+		chanID   string
+		expected string
+	}{
+		{4, "chanID1", "Access Denied! You need to be at least PM in this project to use this command!"},
+		{2, "chanId1", "standup time for chanId1 channel deleted"},
+		{2, "chanId2", "standup time for this channel removed, but there are people marked as a standuper."},
+	}
+	for _, test := range testCase {
+		actual := r.removeTime(test.accessL, test.chanID)
+		assert.Equal(t, test.expected, actual)
+	}
+	assert.NoError(t, r.db.DeleteChannel(channel.ID))
+	assert.NoError(t, r.db.DeleteChannel(channelWithMembers.ID))
 }
 
 func TestGetAccessLevel(t *testing.T) {
