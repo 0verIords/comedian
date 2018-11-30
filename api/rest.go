@@ -454,7 +454,7 @@ func (r *REST) removeTime(accessLevel int, channelID string) string {
 	if len(st) != 0 {
 		return r.conf.Translate.RemoveStandupTimeWithUsers
 	}
-	return fmt.Sprintf(r.conf.Translate.RemoveStandupTime, channelID)
+	return fmt.Sprintf(r.conf.Translate.RemoveStandupTime)
 }
 
 func (r *REST) addTimeTable(accessLevel int, channelID, params string) string {
