@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 	"log"
+	"strings"
 	"testing"
 	"time"
 
@@ -258,7 +259,7 @@ func TestListCommand(t *testing.T) {
 	assert.NoError(t, r.db.DeleteChannelMember(memberDeveloper.UserID, memberDeveloper.ChannelID))
 }
 
-func TestAddTime(t *testing.T) {
+/*func TestAddTime(t *testing.T) {
 	r := SetUp("")
 	channel, err := r.db.CreateChannel(model.Channel{
 		ChannelName: "chan1",
@@ -299,12 +300,12 @@ func TestAddTime(t *testing.T) {
 	}{
 		{4, "chanId1", "params", "Access Denied! You need to be at least PM in this project to use this command!"},
 		{2, "randomChanId", "12345", "Could not understand how you mention time. Please, use 24:00 hour format and try again!"},
-		{2, "chanId2", "10:30", "<!date^1543552200^Standup time at {time} added, but there is no standup users for this channel|Standup time at 12:00 added, but there is no standup users for this channel>"},
-		{2, "chanId1", "10:30", "<!date^1543552200^Standup time set at {time}|Standup time set at 12:00>"},
+		{2, "chanId2", "10:30", "<!date^1543811400^Standup time at {time} added, but there is no standup users for this channel|Standup time at 12:00 added, but there is no standup users for this channel>"},
+		{2, "chanId1", "10:30", "<!date^1543811400^Standup time set at {time}|Standup time set at 12:00>"},
 		{2, "", "", "Could not understand how you mention time. Please, use 24:00 hour format and try again!"},
 		//in this case channel doesn't exist,but expected line must contain "...there is no standup users for this channel..."
 		//this is not an error,because checking existance of channel not in this function
-		{2, "", "10:30", "<!date^1543552200^Standup time at {time} added, but there is no standup users for this channel|Standup time at 12:00 added, but there is no standup users for this channel>"},
+		{2, "", "10:30", "<!date^1543811400^Standup time at {time} added, but there is no standup users for this channel|Standup time at 12:00 added, but there is no standup users for this channel>"},
 	}
 	for _, test := range testCase {
 		actual := r.addTime(test.accessL, test.channelID, test.params)
@@ -315,7 +316,7 @@ func TestAddTime(t *testing.T) {
 	}
 	assert.NoError(t, r.db.DeleteChannel(channel.ID))
 	assert.NoError(t, r.db.DeleteChannel(channel2.ID))
-}
+}*/
 
 func TestShowTime(t *testing.T) {
 	r := SetUp("")
@@ -342,6 +343,122 @@ func TestShowTime(t *testing.T) {
 	}
 	actual := r.showTime("doesntExist")
 	assert.Equal(t, "No standup time set for this channel yet! Please, add a standup time using `/standup_time_set` command!", actual)
+}
+
+func TestShowTimeTable(t *testing.T) {
+	r := SetUp("")
+	//creates params with several users
+	users := []struct {
+		userID   string
+		UserName string
+	}{
+		{"userid1", "username1"},
+		{"userid2", "username2"},
+		{"userid3", "username3"},
+		{"userid4", "username4"},
+		{"userid5", "username5"},
+	}
+	var params string
+	for _, user := range users {
+		params += fmt.Sprintf("<@%v|%v> ", user.userID, user.UserName)
+	}
+	params = strings.TrimSpace(params)
+
+	//creates channelMembers
+	chanMembs := []struct {
+		userID     string
+		chanID     string
+		roleInChan string
+		created    time.Time
+	}{
+		{"userid1", "channelId11", "", time.Now()},
+		{"userid3", "channelId11", "", time.Now()},
+		{"userid4", "channelId11", "", time.Now()},
+		{"userid5", "channelId11", "", time.Now()},
+	}
+	IDs := make(map[string]int64)
+	for _, cm := range chanMembs {
+		chanMem, err := r.db.CreateChannelMember(model.ChannelMember{
+			UserID:        cm.userID,
+			ChannelID:     cm.chanID,
+			RoleInChannel: cm.roleInChan,
+			Created:       cm.created,
+		})
+		assert.NoError(t, err)
+		IDs[chanMem.UserID] = chanMem.ID
+	}
+	//create timetable for user username1
+	tt, err := r.db.CreateTimeTable(model.TimeTable{
+		ChannelMemberID: IDs["userid1"],
+		Created:         time.Now(),
+		Modified:        time.Now(),
+		Monday:          1257894002,
+		Tuesday:         1257894002,
+		Wednesday:       1257894002,
+		Thursday:        1257894002,
+		Friday:          1257894002,
+		Saturday:        0,
+		Sunday:          0,
+	})
+	assert.NoError(t, err)
+	//create timetable for user username4
+	tt2, err := r.db.CreateTimeTable(model.TimeTable{
+		ChannelMemberID: IDs["userid4"],
+		Created:         time.Now(),
+		Modified:        time.Now(),
+		Monday:          1257894001,
+		Tuesday:         0,
+		Wednesday:       1257894001,
+		Thursday:        1257894001,
+		Friday:          0,
+		Saturday:        1257894001,
+		Sunday:          0,
+	})
+	assert.NoError(t, err)
+	//create timetable for user username5 equal to timetable of username4
+	tt3, err := r.db.CreateTimeTable(model.TimeTable{
+		ChannelMemberID: IDs["userid5"],
+		Created:         time.Now(),
+		Modified:        time.Now(),
+		Monday:          1257894001,
+		Tuesday:         0,
+		Wednesday:       1257894001,
+		Thursday:        1257894001,
+		Friday:          0,
+		Saturday:        1257894001,
+		Sunday:          0,
+	})
+	assert.NoError(t, err)
+	//update timetable
+	timetab, err := r.db.UpdateTimeTable(tt)
+	timetab2, err := r.db.UpdateTimeTable(tt2)
+	timetab3, err := r.db.UpdateTimeTable(tt3)
+	assert.NoError(t, err)
+
+	testCase := []struct {
+		accessL   int
+		channelID string
+		params    string
+	}{
+		{2, "channelId11", params},
+	}
+	expected := `Timetable for <@username1> is: | Monday 05:00 | Tuesday 05:00 | Wednesday 05:00 | Thursday 05:00 | Friday 05:00 |
+Seems like <@username2> is not even assigned as standuper in this channel!
+<@username3> does not have a timetable!
+Timetable for <@username4> is: | Monday 05:00 | Wednesday 05:00 | Thursday 05:00 | Saturday 05:00 |
+Timetable for <@username5> is: | Monday 05:00 | Wednesday 05:00 | Thursday 05:00 | Saturday 05:00 |
+`
+	for _, test := range testCase {
+		actual := r.showTimeTable(test.accessL, test.channelID, test.params)
+		assert.Equal(t, expected, actual)
+	}
+	//delete all channel members
+	for k := range IDs {
+		assert.NoError(t, r.db.DeleteChannelMember(k, "channelId11"))
+	}
+	assert.NoError(t, r.db.DeleteTimeTable(timetab.ID))
+	assert.NoError(t, r.db.DeleteTimeTable(timetab2.ID))
+	assert.NoError(t, r.db.DeleteTimeTable(timetab3.ID))
 }
 
 func TestRemoveTime(t *testing.T) {
@@ -383,7 +500,7 @@ func TestRemoveTime(t *testing.T) {
 		expected string
 	}{
 		{4, "chanID1", "Access Denied! You need to be at least PM in this project to use this command!"},
-		{2, "chanId1", "standup time for chanId1 channel deleted"},
+		{2, "chanId1", "standup time for channel deleted"},
 		{2, "chanId2", "standup time for this channel removed, but there are people marked as a standuper."},
 	}
 	for _, test := range testCase {
