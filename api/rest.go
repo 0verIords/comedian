@@ -516,6 +516,7 @@ func (r *REST) addTimeTable(accessLevel int, channelID, params string) string {
 }
 
 func (r *REST) showTimeTable(accessLevel int, channelID, params string) string {
+	var totalString string
 	//add parsing of params
 	users := strings.Split(params, " ")
 	rg, _ := regexp.Compile("<@([a-z0-9]+)|([a-z0-9]+)>")
@@ -528,17 +529,17 @@ func (r *REST) showTimeTable(accessLevel int, channelID, params string) string {
 
 		m, err := r.db.FindChannelMemberByUserID(userID, channelID)
 		if err != nil {
-			fmt.Sprintf(r.conf.Translate.NotAStanduper, userName)
+			totalString += fmt.Sprintf(r.conf.Translate.NotAStanduper, userName)
 			continue
 		}
 		tt, err := r.db.SelectTimeTable(m.ID)
 		if err != nil {
-			fmt.Sprintf(r.conf.Translate.NoTimetableSet, userName)
+			totalString += fmt.Sprintf(r.conf.Translate.NoTimetableSet, userName)
 			continue
 		}
-		fmt.Sprintf(r.conf.Translate.TimetableShow, userName, tt.Show())
+		totalString += fmt.Sprintf(r.conf.Translate.TimetableShow, userName, tt.Show())
 	}
-	return ""
+	return totalString
 }
 
 func (r *REST) removeTimeTable(accessLevel int, channelID, params string) string {
