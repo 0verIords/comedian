@@ -86,45 +86,51 @@ func TestAddCommand(t *testing.T) {
 func TestAddMembers(t *testing.T) {
 	r := SetUp()
 
-	Users := []struct {
-		ID   string
-		Name string
-	}{
-		{"userID1", "testUser1"},
-		{"userID2", "testUser2"},
-		{"userID3", "testUser3"},
-	}
-	var expectedLine string
-
-	var users []string
-	for _, user := range Users {
-		user := fmt.Sprintf("<@%v|%v>", user.ID, user.Name)
-		users = append(users, user)
-		expectedLine += user
-	}
-
-	wrongUserData := []string{
-		"User1",
-		"User2",
-	}
+	//creates channel member with role pm
+	_, err := r.db.CreateChannelMember(model.ChannelMember{
+		UserID:        "testUserId1",
+		ChannelID:     "chan1",
+		RoleInChannel: "pm",
+		Created:       time.Now(),
+	})
+	assert.NoError(t, err)
+	//creates channel member with role developer
+	_, err = r.db.CreateChannelMember(model.ChannelMember{
+		UserID:        "testUserId2",
+		ChannelID:     "chan1",
+		RoleInChannel: "dev",
+		Created:       time.Now(),
+	})
+	assert.NoError(t, err)
 
 	testCase := []struct {
 		Users         []string
 		RoleInChannel string
-		ChannelID     string
 		Expected      string
 	}{
-		{users, "pm", "chan1", "Users are assigned as PMs: " + expectedLine + "\n"},
-		{users, "delevoper", "chan1", "Members are assigned: " + expectedLine + "\n"},
-		{wrongUserData, "pm", "chan1", "Could not assign users as PMs: User1User2\n"},
-		{wrongUserData, "developer", "chan1", "Could not assign members: User1User2\n"},
+		//existed channel member with role pm
+		{[]string{"<@testUserId1|testUserName1>"}, "pm", "Users already have roles: <@testUserId1|testUserName1>\n"},
+		//existed channel member with role dev
+		{[]string{"<@testUserId2|testUserName2>"}, "dev", "Members already have roles: <@testUserId2|testUserName2>\n"},
+		//doesn't existed member with role pm
+		{[]string{"<@testUserId3|testUserName3>"}, "pm", "Users are assigned as PMs: <@testUserId3|testUserName3>\n"},
+		//two doesn't existed members with role pm
+		{[]string{"<@testUserId4|testUserName4>", "<@testUserId5|testUserName5>"}, "pm", "Users are assigned as PMs: <@testUserId4|testUserName4><@testUserId5|testUserName5>\n"},
+		//doesn't existed member with role dev
+		{[]string{"<@testUserId6|testUserName6>"}, "dev", "Members are assigned: <@testUserId6|testUserName6>\n"},
+		//wrong parameters
+		{[]string{"user1"}, "pm", "Could not assign users as PMs: user1\n"},
+		{[]string{"user1"}, "", "Could not assign members: user1\n"},
+		{[]string{"user1", "<>"}, "", "Could not assign members: user1<>\n"},
 	}
 	for _, test := range testCase {
-		actual := r.addMembers(test.Users, test.RoleInChannel, test.ChannelID)
-		for _, u := range Users {
-			r.db.DeleteChannelMember(u.ID, test.ChannelID)
-		}
+		actual := r.addMembers(test.Users, test.RoleInChannel, "chan1")
 		assert.Equal(t, test.Expected, actual)
+	}
+	//deletes channelMembers
+	for i := 1; i <= 6; i++ {
+		err = r.db.DeleteChannelMember(fmt.Sprintf("testUserId%v", i), "chan1")
+		assert.NoError(t, err)
 	}
 }
 
