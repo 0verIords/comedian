@@ -519,8 +519,8 @@ func TestGetAccessLevel(t *testing.T) {
 		Role      string
 		Expected  int
 	}{
-		{"SUPERADMINID", "SAdminName", "RANDOMCHAN", "", 1},
-		{"SUPERADMINID", "SAdminName", "RANDOMCHAN", "pm", 1},
+		{"SuperAdminID", "SAdminName", "RANDOMCHAN", "", 1},
+		{"SuperAdminID", "SAdminName", "RANDOMCHAN", "pm", 1},
 		{"AdminId", "AdminName", "RANDOMCHAN", "admin", 2},
 		{"UserId1", "Username", "RANDOMCHAN", "developer", 4},
 		{"", "", "", "", 4},
