@@ -13,14 +13,12 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func SetUp(SuperAdminID string) *REST {
+func SetUp() *REST {
 	c, err := config.Get()
 	if err != nil {
 		log.Fatal(err)
 	}
-	if SuperAdminID != "" {
-		c.ManagerSlackUserID = SuperAdminID
-	}
+	c.ManagerSlackUserID = "SuperAdminID"
 	slack, err := chat.NewSlack(c)
 	if err != nil {
 		log.Fatal(err)
@@ -33,13 +31,13 @@ func SetUp(SuperAdminID string) *REST {
 }
 
 func TestHelpText(t *testing.T) {
-	r := SetUp("")
+	r := SetUp()
 	text := r.displayHelpText()
 	assert.Equal(t, "Help Text!", text)
 }
 
 func TestAddCommand(t *testing.T) {
-	r := SetUp("SuperAdminID")
+	r := SetUp()
 
 	user, err := r.db.CreateUser(model.User{
 		UserName: "testUser",
@@ -86,7 +84,7 @@ func TestAddCommand(t *testing.T) {
 }
 
 func TestAddMembers(t *testing.T) {
-	r := SetUp("")
+	r := SetUp()
 
 	Users := []struct {
 		ID   string
@@ -131,7 +129,7 @@ func TestAddMembers(t *testing.T) {
 }
 
 func TestDeleteCommand(t *testing.T) {
-	r := SetUp("")
+	r := SetUp()
 
 	Params := []struct {
 		ID   string
@@ -201,7 +199,7 @@ func TestDeleteCommand(t *testing.T) {
 
 func TestListCommand(t *testing.T) {
 	//modify test to cover more cases: no users, etc.
-	r := SetUp("SuperAdminID")
+	r := SetUp()
 
 	channel, err := r.db.CreateChannel(model.Channel{
 		ChannelName: "TestChannel",
@@ -319,7 +317,7 @@ func TestListCommand(t *testing.T) {
 }*/
 
 func TestShowTime(t *testing.T) {
-	r := SetUp("")
+	r := SetUp()
 	testCase := []struct {
 		channelName string
 		channelID   string
@@ -346,7 +344,7 @@ func TestShowTime(t *testing.T) {
 }
 
 func TestShowTimeTable(t *testing.T) {
-	r := SetUp("")
+	r := SetUp()
 	//creates params with several users
 	users := []struct {
 		userID   string
@@ -462,7 +460,7 @@ Timetable for <@username5> is: | Monday 05:00 | Wednesday 05:00 | Thursday 05:00
 }
 
 func TestRemoveTime(t *testing.T) {
-	r := SetUp("")
+	r := SetUp()
 	channel, err := r.db.CreateChannel(model.Channel{
 		ChannelName: "chan1",
 		ChannelID:   "chanId1",
@@ -512,7 +510,7 @@ func TestRemoveTime(t *testing.T) {
 }
 
 func TestGetAccessLevel(t *testing.T) {
-	r := SetUp("SUPERADMINID")
+	r := SetUp()
 
 	testCase := []struct {
 		UserID    string
