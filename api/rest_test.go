@@ -137,69 +137,20 @@ func TestAddMembers(t *testing.T) {
 func TestDeleteCommand(t *testing.T) {
 	r := SetUp()
 
-	Params := []struct {
-		ID   string
-		Name string
-		Role string
-	}{
-		{"UserID1", "User1", "developer"},
-		{"UserID2", "User2", "разработчик"},
-		{"UserID3", "User3", "pm"},
-		{"UserID4", "User4", "пм"},
-		{"UserID5", "User5", ""},
-		{"UserID6", "User6", "admin"},
-		{"UserID7", "User7", "админ"},
-		{"UserID8", "User8", "randomRole"},
-	}
-	var ParamString string
-	ParamStrings := make(map[string]string)
-	for _, p := range Params {
-		ParamString = fmt.Sprintf("<@%v|%v>/%v", p.ID, p.Name, p.Role)
-		ParamStrings[p.Role] = ParamString
-	}
-
 	testCase := []struct {
-		AccessL   int
-		ChannelID string
-		Params    string
-		Expected  string
+		accessLevel int
+		channelID   string
+		params      string
+		expected    string
 	}{
-		{4, "CHAN1", ParamStrings["developer"], "Access Denied! You need to be at least PM in this project to use this command!"},
-		{4, "CHAN1", ParamStrings["разработчик"], "Access Denied! You need to be at least PM in this project to use this command!"},
-		{4, "CHAN1", ParamStrings["pm"], "Access Denied! You need to be at least PM in this project to use this command!"},
-		{4, "CHAN1", ParamStrings["пм"], "Access Denied! You need to be at least PM in this project to use this command!"},
-		{4, "CHAN1", ParamStrings[""], "Access Denied! You need to be at least PM in this project to use this command!"},
-		{4, "CHAN1", ParamStrings["admin"], "Access Denied! You need to be at least admin in this slack to use this command!"},
-		{4, "CHAN1", ParamStrings["админ"], "Access Denied! You need to be at least admin in this slack to use this command!"},
-		//accessLevel 3 can delete user pm,but userID3(pm) don'exist in db
-		{3, "CHAN1", ParamStrings["pm"], "Could not remove the following members: <@UserID3|User3>\n"},
-		{4, "CHAN1", ParamStrings["randomRole"], "Please, check correct role name (admin, developer, pm)"},
+		{4, "chan1", "<@id|name> / admin", "Access Denied! You need to be at least admin in this slack to use this command!"},
+		{4, "chan1", "<@id|name> / pm", "Access Denied! You need to be at least PM in this project to use this command!"},
+		{4, "chan1", "<@id|name> / random", "Please, check correct role name (admin, developer, pm)"},
+		{4, "chan1", "<@id|name>", "Access Denied! You need to be at least PM in this project to use this command!"},
 	}
-
 	for _, test := range testCase {
-		actual := r.deleteCommand(test.AccessL, test.ChannelID, test.Params)
-		assert.Equal(t, test.Expected, actual)
-	}
-
-	var WrongParamString string
-	WrongParamStrings := make(map[string]string)
-	for _, p := range Params {
-		WrongParamString = fmt.Sprintf("<@%v |%v>//%v", p.ID, p.Name, p.Role)
-		WrongParamStrings[p.Role] = WrongParamString
-	}
-	testCase2 := []struct {
-		AccessL   int
-		ChannelID string
-		Params    string
-		Expected  string
-	}{
-		{4, "CHAN1", WrongParamStrings["developer"], "Access Denied! You need to be at least PM in this project to use this command!"},
-		{3, "CHAN1", WrongParamStrings["developer"], "Could not remove the following members: <@UserID1|User1>\n"},
-		{3, "CHAN1", WrongParamStrings["admin"], "Could not remove the following members: <@UserID6|User6>\n"},
-	}
-	for _, test := range testCase2 {
-		actual := r.deleteCommand(test.AccessL, test.ChannelID, test.Params)
-		assert.Equal(t, test.Expected, actual)
+		actual := r.deleteCommand(test.accessLevel, test.channelID, test.params)
+		assert.Equal(t, test.expected, actual)
 	}
 }
 
