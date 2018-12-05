@@ -269,29 +269,34 @@ func TestAddTime(t *testing.T) {
 
 func TestShowTime(t *testing.T) {
 	r := SetUp()
+	//create a channel with standuptime
+	channel1, err := r.db.CreateChannel(model.Channel{
+		ChannelName: "testChannel1",
+		ChannelID:   "testChannelId1",
+	})
+	assert.NoError(t, err)
+	//set a standuptime for channel
+	err = r.db.CreateStandupTime(12345, channel1.ChannelID)
+	assert.NoError(t, err)
+	//create channel without standuptime
+	channel2, err := r.db.CreateChannel(model.Channel{
+		ChannelName: "testChannel2",
+		ChannelID:   "testChannelId2",
+	})
+	assert.NoError(t, err)
 	testCase := []struct {
-		channelName string
-		channelID   string
-		StandupTime int64
-		expected    string
+		channelID string
+		expected  string
 	}{
-		{"channel1", "chanId1", 100, "<!date^100^Standup time is {time}|Standup time set at 12:00>"},
-		{"channel2,", "chanId2", 0, "No standup time set for this channel yet! Please, add a standup time using `/standup_time_set` command!"},
+		{channel1.ChannelID, "<!date^12345^Standup time is {time}|Standup time set at 12:00>"},
+		{channel2.ChannelID, "No standup time set for this channel yet! Please, add a standup time using `/standup_time_set` command!"},
+		{"doesntExistedChan", "No standup time set for this channel yet! Please, add a standup time using `/standup_time_set` command!"},
 	}
 	for _, test := range testCase {
-		channel, err := r.db.CreateChannel(model.Channel{
-			ChannelName: test.channelName,
-			ChannelID:   test.channelID,
-		})
-		assert.NoError(t, err)
-		err = r.db.CreateStandupTime(test.StandupTime, channel.ChannelID)
-		assert.NoError(t, err)
-		actual := r.showTime(channel.ChannelID)
+		actual := r.showTime(test.channelID)
 		assert.Equal(t, test.expected, actual)
-		assert.NoError(t, r.db.DeleteChannel(channel.ID))
 	}
-	actual := r.showTime("doesntExistChannel")
-	assert.Equal(t, "No standup time set for this channel yet! Please, add a standup time using `/standup_time_set` command!", actual)
+	assert.NoError(t, r.db.DeleteChannel(channel1.ID))
 }
 
 func TestShowTimeTable(t *testing.T) {
