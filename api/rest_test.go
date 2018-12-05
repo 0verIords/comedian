@@ -375,57 +375,48 @@ func TestShowTimeTable(t *testing.T) {
 
 func TestRemoveTime(t *testing.T) {
 	r := SetUp()
-	channel, err := r.db.CreateChannel(model.Channel{
-		ChannelName: "chan1",
-		ChannelID:   "chanId1",
+	//creates channel with members
+	channel1, err := r.db.CreateChannel(model.Channel{
+		ChannelName: "testChannel1",
+		ChannelID:   "testChannelId1",
 		StandupTime: int64(100),
 	})
 	assert.NoError(t, err)
-	channelWithMembers, err := r.db.CreateChannel(model.Channel{
-		ChannelName: "chan2",
-		ChannelID:   "chanId2",
+	//adds channel members
+	chanMemb1, err := r.db.CreateChannelMember(model.ChannelMember{
+		UserID:        "uid1",
+		ChannelID:     channel1.ChannelID,
+		RoleInChannel: "",
+		Created:       time.Now(),
+	})
+	assert.NoError(t, err)
+	//creates channel without members
+	channel2, err := r.db.CreateChannel(model.Channel{
+		ChannelName: "testChannel2",
+		ChannelID:   "testChannelId2",
 		StandupTime: int64(100),
 	})
 	assert.NoError(t, err)
-	//add members to this channel
-	chanMemb := []struct {
-		UserID     string
-		ChannelID  string
-		RoleInChan string
-		Created    time.Time
-	}{
-		{"uid1", "chanId2", "", time.Now()},
-		{"uid2", "chanId2", "", time.Now()},
-	}
-	for _, cm := range chanMemb {
-		r.db.CreateChannelMember(model.ChannelMember{
-			UserID:        cm.UserID,
-			ChannelID:     cm.ChannelID,
-			RoleInChannel: cm.RoleInChan,
-			Created:       cm.Created,
-		})
-	}
 
 	testCase := []struct {
 		accessL  int
 		chanID   string
 		expected string
 	}{
-		{4, "chanID1", "Access Denied! You need to be at least PM in this project to use this command!"},
-		{2, "chanId1", "standup time for channel deleted"},
-		{2, "chanId2", "standup time for this channel removed, but there are people marked as a standuper."},
+		{4, channel1.ChannelID, "Access Denied! You need to be at least PM in this project to use this command!"},
+		{2, channel1.ChannelID, "standup time for this channel removed, but there are people marked as a standuper."},
+		{3, channel2.ChannelID, "standup time for channel deleted"},
 	}
 	for _, test := range testCase {
 		actual := r.removeTime(test.accessL, test.chanID)
 		assert.Equal(t, test.expected, actual)
 	}
-	assert.NoError(t, r.db.DeleteChannel(channel.ID))
-	assert.NoError(t, r.db.DeleteChannel(channelWithMembers.ID))
-	//delete channel members
-	for _, cm := range chanMemb {
-		err := r.db.DeleteChannelMember(cm.UserID, cm.ChannelID)
-		assert.NoError(t, err)
-	}
+	//deletes channels
+	assert.NoError(t, r.db.DeleteChannel(channel1.ID))
+	assert.NoError(t, r.db.DeleteChannel(channel2.ID))
+	//deletes channel members
+	err = r.db.DeleteChannelMember(chanMemb1.UserID, chanMemb1.ChannelID)
+	assert.NoError(t, err)
 }
 
 func TestGetAccessLevel(t *testing.T) {
