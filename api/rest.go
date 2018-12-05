@@ -522,7 +522,7 @@ func (r *REST) showTimeTable(accessLevel int, channelID, params string) string {
 	rg, _ := regexp.Compile("<@([a-z0-9]+)|([a-z0-9]+)>")
 	for _, u := range users {
 		if !rg.MatchString(u) {
-			logrus.Error(r.conf.Translate.WrongUsernameError)
+			totalString += r.conf.Translate.WrongUsernameError
 			continue
 		}
 		userID, userName := utils.SplitUser(u)
