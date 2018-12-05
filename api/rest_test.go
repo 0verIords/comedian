@@ -296,7 +296,9 @@ func TestShowTime(t *testing.T) {
 		actual := r.showTime(test.channelID)
 		assert.Equal(t, test.expected, actual)
 	}
+	//delete channels
 	assert.NoError(t, r.db.DeleteChannel(channel1.ID))
+	assert.NoError(t, r.db.DeleteChannel(channel2.ID))
 }
 
 func TestShowTimeTable(t *testing.T) {
