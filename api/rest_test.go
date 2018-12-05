@@ -419,6 +419,80 @@ func TestRemoveTime(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestRemoveTimeTable(t *testing.T) {
+	r := SetUp()
+	//creates channel with members
+	channel, err := r.db.CreateChannel(model.Channel{
+		ChannelName: "testChannel1",
+		ChannelID:   "testChannelId1",
+		StandupTime: int64(100),
+	})
+	assert.NoError(t, err)
+	//adds member without timetable
+	chanMemb1, err := r.db.CreateChannelMember(model.ChannelMember{
+		UserID:        "uid1",
+		ChannelID:     channel.ChannelID,
+		RoleInChannel: "",
+		Created:       time.Now(),
+	})
+	assert.NoError(t, err)
+	//adds member with timetable
+	chanMemb2, err := r.db.CreateChannelMember(model.ChannelMember{
+		UserID:        "uid2",
+		ChannelID:     channel.ChannelID,
+		RoleInChannel: "",
+		Created:       time.Now(),
+	})
+	assert.NoError(t, err)
+	//create timetable
+	timeTable1, err := r.db.CreateTimeTable(model.TimeTable{
+		ChannelMemberID: chanMemb2.ID,
+		Created:         time.Now(),
+		//needs to update timetable
+		Modified:  time.Now(),
+		Monday:    12345,
+		Tuesday:   12345,
+		Wednesday: 0,
+		Thursday:  0,
+		Friday:    12345,
+		Saturday:  12345,
+		Sunday:    0,
+	})
+	assert.NoError(t, err)
+	//updates timetable
+	_, err = r.db.UpdateTimeTable(timeTable1)
+	assert.NoError(t, err)
+
+	testCases := []struct {
+		accessLevel int
+		channelID   string
+		params      string
+		expected    string
+	}{
+		{4, "", "", "Access Denied! You need to be at least PM in this project to use this command!"},
+		{3, channel.ChannelID, "wrongparams", "Seems like you misspelled username. Please, check and try command again!"},
+		//user without timetable
+		{3, channel.ChannelID, fmt.Sprintf("<@%v|username1>", chanMemb1.UserID), "<@username1> does not have a timetable!\n"},
+		//user with timetable
+		{3, channel.ChannelID, fmt.Sprintf("<@%v|username2>", chanMemb2.UserID), "Timetable removed for <@username2>\n"},
+		//user isn't member of this channel
+		{3, channel.ChannelID, "<@randomUser|RandomUsername>", "Seems like <@RandomUsername> is not even assigned as standuper in this channel!\n"},
+		//several parameters
+		{3, channel.ChannelID, "<@uid1|username> <@randomUser|RandomUsername>", "<@username> does not have a timetable!\nSeems like <@RandomUsername> is not even assigned as standuper in this channel!\n"},
+	}
+	for _, test := range testCases {
+		actual := r.removeTimeTable(test.accessLevel, test.channelID, test.params)
+		assert.Equal(t, test.expected, actual)
+	}
+	//deletes channels
+	assert.NoError(t, r.db.DeleteChannel(channel.ID))
+	//deletes channel members
+	err = r.db.DeleteChannelMember(chanMemb1.UserID, chanMemb1.ChannelID)
+	assert.NoError(t, err)
+	err = r.db.DeleteChannelMember(chanMemb2.UserID, chanMemb2.ChannelID)
+	assert.NoError(t, err)
+}
+
 func TestGetAccessLevel(t *testing.T) {
 	r := SetUp()
 
