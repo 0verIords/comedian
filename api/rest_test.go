@@ -419,6 +419,84 @@ func TestRemoveTime(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestAddTimeTable(t *testing.T) {
+	r := SetUp()
+
+	//creates channel
+	channel, err := r.db.CreateChannel(model.Channel{
+		ChannelName: "testChannel",
+		ChannelID:   "testChannelid1",
+		StandupTime: 0,
+	})
+	assert.NoError(t, err)
+	//adds channel member with timetable
+	chanMemb, err := r.db.CreateChannelMember(model.ChannelMember{
+		UserID:        "testChanMemb",
+		ChannelID:     channel.ChannelID,
+		RoleInChannel: "",
+		Created:       time.Now(),
+	})
+	assert.NoError(t, err)
+	//creates timetable
+	timeTable, err := r.db.CreateTimeTable(model.TimeTable{
+		ChannelMemberID: chanMemb.ID,
+		Created:         time.Now(),
+		//needs to update timetable
+		Modified:  time.Now(),
+		Monday:    0,
+		Tuesday:   12345,
+		Wednesday: 12345,
+		Thursday:  0,
+		Friday:    12345,
+		Saturday:  0,
+		Sunday:    0,
+	})
+	assert.NoError(t, err)
+	//updates timetable
+	_, err = r.db.UpdateTimeTable(timeTable)
+	assert.NoError(t, err)
+
+	testCase := []struct {
+		accessLevel int
+		channelID   string
+		params      string
+		expected    string
+	}{
+		{4, channel.ChannelID, "", "Access Denied! You need to be at least PM in this project to use this command!"},
+		//wrong parameters
+		{3, channel.ChannelID, "user on mon", "Sorry, could not understand where are the weekdays and where is the time. Please, check the text for mistakes and try again"},
+		//wrong user data
+		{3, channel.ChannelID, "user on mon at 10:30", "Seems like you misspelled username. Please, check and try command again!"},
+		//channel member with timetable
+		{3, channel.ChannelID, fmt.Sprintf("<@%v|username on mon at 15:00", chanMemb.UserID), "Timetable for <@testChanMemb> updated: | Monday 15:00 | Tuesday 08:25 | Wednesday 08:25 | Friday 08:25 | \n"},
+		//user isn't member in channel
+		//channel member will be created
+		{3, channel.ChannelID, "<@newUser|NewUserName> random on mon at 10:00", "Timetable for <@newUser> created: | Monday 10:00 | \nSeems like you misspelled username. Please, check and try command again!"},
+	}
+	for _, test := range testCase {
+		actual := r.addTimeTable(test.accessLevel, test.channelID, test.params)
+		assert.Equal(t, test.expected, actual)
+	}
+	//delete timetable
+	err = r.db.DeleteTimeTable(timeTable.ID)
+	assert.NoError(t, err)
+	//deletes channel members
+	err = r.db.DeleteChannelMember(chanMemb.UserID, chanMemb.ChannelID)
+	assert.NoError(t, err)
+	//delete created channel member and his timetable
+	cm, err := r.db.FindChannelMemberByUserID("newUser", channel.ChannelID)
+	assert.NoError(t, err)
+	timeT, err := r.db.SelectTimeTable(cm.ID)
+	assert.NoError(t, err)
+	err = r.db.DeleteTimeTable(timeT.ID)
+	assert.NoError(t, err)
+	err = r.db.DeleteChannelMember("newUser", channel.ChannelID)
+	assert.NoError(t, err)
+	//deletes channel
+	err = r.db.DeleteChannel(channel.ID)
+	assert.NoError(t, err)
+}
+
 func TestRemoveTimeTable(t *testing.T) {
 	r := SetUp()
 	//creates channel with members
