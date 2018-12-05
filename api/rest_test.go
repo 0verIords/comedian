@@ -10,6 +10,7 @@ import (
 	"github.com/maddevsio/comedian/chat"
 	"github.com/maddevsio/comedian/config"
 	"github.com/maddevsio/comedian/model"
+	"github.com/maddevsio/comedian/utils"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -238,6 +239,9 @@ func TestAddTime(t *testing.T) {
 	})
 	assert.NoError(t, err)
 
+	//parse 10:30 text to int to use it in testCases
+	tm, err := utils.ParseTimeTextToInt("10:30")
+	assert.NoError(t, err)
 	testCase := []struct {
 		accessLevel int
 		channelID   string
@@ -245,9 +249,9 @@ func TestAddTime(t *testing.T) {
 		expected    string
 	}{
 		{4, "", "", "Access Denied! You need to be at least PM in this project to use this command!"},
-		{3, channel1.ChannelID, "10:30", "<!date^1543897800^Standup time at {time} added, but there is no standup users for this channel|Standup time at 12:00 added, but there is no standup users for this channel>"},
-		{3, channel2.ChannelID, "10:30", "<!date^1543897800^Standup time set at {time}|Standup time set at 12:00>"},
-		{3, "random", "10:30", "<!date^1543897800^Standup time at {time} added, but there is no standup users for this channel|Standup time at 12:00 added, but there is no standup users for this channel>"},
+		{3, channel1.ChannelID, "10:30", fmt.Sprintf("<!date^%v^Standup time at {time} added, but there is no standup users for this channel|Standup time at 12:00 added, but there is no standup users for this channel>", tm)},
+		{3, channel2.ChannelID, "10:30", fmt.Sprintf("<!date^%v^Standup time set at {time}|Standup time set at 12:00>", tm)},
+		{3, "random", "10:30", fmt.Sprintf("<!date^%v^Standup time at {time} added, but there is no standup users for this channel|Standup time at 12:00 added, but there is no standup users for this channel>", tm)},
 	}
 	for _, test := range testCase {
 		actual := r.addTime(test.accessLevel, test.channelID, test.params)
@@ -286,7 +290,7 @@ func TestShowTime(t *testing.T) {
 		assert.Equal(t, test.expected, actual)
 		assert.NoError(t, r.db.DeleteChannel(channel.ID))
 	}
-	actual := r.showTime("doesntExist")
+	actual := r.showTime("doesntExistChannel")
 	assert.Equal(t, "No standup time set for this channel yet! Please, add a standup time using `/standup_time_set` command!", actual)
 }
 
