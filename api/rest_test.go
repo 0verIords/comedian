@@ -3,7 +3,6 @@ package api
 import (
 	"fmt"
 	"log"
-	"strings"
 	"testing"
 	"time"
 
@@ -303,118 +302,75 @@ func TestShowTime(t *testing.T) {
 
 func TestShowTimeTable(t *testing.T) {
 	r := SetUp()
-	//creates params with several users
-	users := []struct {
-		userID   string
-		UserName string
-	}{
-		{"userid1", "username1"},
-		{"userid2", "username2"},
-		{"userid3", "username3"},
-		{"userid4", "username4"},
-		{"userid5", "username5"},
-	}
-	var params string
-	for _, user := range users {
-		params += fmt.Sprintf("<@%v|%v> ", user.userID, user.UserName)
-	}
-	params = strings.TrimSpace(params)
-
-	//creates channelMembers
-	chanMembs := []struct {
-		userID     string
-		chanID     string
-		roleInChan string
-		created    time.Time
-	}{
-		{"userid1", "channelId11", "", time.Now()},
-		{"userid3", "channelId11", "", time.Now()},
-		{"userid4", "channelId11", "", time.Now()},
-		{"userid5", "channelId11", "", time.Now()},
-	}
-	IDs := make(map[string]int64)
-	for _, cm := range chanMembs {
-		chanMem, err := r.db.CreateChannelMember(model.ChannelMember{
-			UserID:        cm.userID,
-			ChannelID:     cm.chanID,
-			RoleInChannel: cm.roleInChan,
-			Created:       cm.created,
-		})
-		assert.NoError(t, err)
-		IDs[chanMem.UserID] = chanMem.ID
-	}
-	//create timetable for user username1
-	tt, err := r.db.CreateTimeTable(model.TimeTable{
-		ChannelMemberID: IDs["userid1"],
-		Created:         time.Now(),
-		Modified:        time.Now(),
-		Monday:          1257894002,
-		Tuesday:         1257894002,
-		Wednesday:       1257894002,
-		Thursday:        1257894002,
-		Friday:          1257894002,
-		Saturday:        0,
-		Sunday:          0,
+	//creates channel with members
+	channel, err := r.db.CreateChannel(model.Channel{
+		ChannelName: "testChannel1",
+		ChannelID:   "testChannelId1",
+		StandupTime: 12345,
 	})
 	assert.NoError(t, err)
-	//create timetable for user username4
-	tt2, err := r.db.CreateTimeTable(model.TimeTable{
-		ChannelMemberID: IDs["userid4"],
-		Created:         time.Now(),
-		Modified:        time.Now(),
-		Monday:          1257894001,
-		Tuesday:         0,
-		Wednesday:       1257894001,
-		Thursday:        1257894001,
-		Friday:          0,
-		Saturday:        1257894001,
-		Sunday:          0,
+	//adds channel members
+	chanMemb1, err := r.db.CreateChannelMember(model.ChannelMember{
+		UserID:        "uid1",
+		ChannelID:     channel.ChannelID,
+		RoleInChannel: "",
+		Created:       time.Now(),
 	})
 	assert.NoError(t, err)
-	//create timetable for user username5 equal to timetable of username4
-	tt3, err := r.db.CreateTimeTable(model.TimeTable{
-		ChannelMemberID: IDs["userid5"],
+	//creates timetable for chanMemb1
+	timeTable1, err := r.db.CreateTimeTable(model.TimeTable{
+		ChannelMemberID: chanMemb1.ID,
 		Created:         time.Now(),
-		Modified:        time.Now(),
-		Monday:          1257894001,
-		Tuesday:         0,
-		Wednesday:       1257894001,
-		Thursday:        1257894001,
-		Friday:          0,
-		Saturday:        1257894001,
-		Sunday:          0,
+		//needs to update timetable
+		Modified:  time.Now(),
+		Monday:    12345,
+		Tuesday:   12345,
+		Wednesday: 0,
+		Thursday:  0,
+		Friday:    12345,
+		Saturday:  12345,
+		Sunday:    0,
 	})
 	assert.NoError(t, err)
-	//update timetable
-	timetab, err := r.db.UpdateTimeTable(tt)
-	timetab2, err := r.db.UpdateTimeTable(tt2)
-	timetab3, err := r.db.UpdateTimeTable(tt3)
+	//updates timetable
+	_, err = r.db.UpdateTimeTable(timeTable1)
+	assert.NoError(t, err)
+	//creates channel member without timetable
+	chanMemb2, err := r.db.CreateChannelMember(model.ChannelMember{
+		UserID:        "uid2",
+		ChannelID:     channel.ChannelID,
+		RoleInChannel: "",
+		Created:       time.Now(),
+	})
 	assert.NoError(t, err)
 
-	testCase := []struct {
-		accessL   int
-		channelID string
-		params    string
+	testCases := []struct {
+		accessLevel int
+		channelID   string
+		params      string
+		expected    string
 	}{
-		{2, "channelId11", params},
+		{2, channel.ChannelID, fmt.Sprintf("<@%v|username1>", chanMemb1.UserID), "Timetable for <@username1> is: | Monday 08:25 | Tuesday 08:25 | Friday 08:25 | Saturday 08:25 |\n"},
+		{4, channel.ChannelID, fmt.Sprintf("<@%v|username2>", chanMemb2.UserID), "<@username2> does not have a timetable!\n"},
+		{2, channel.ChannelID, "<@randomid|randomName>", "Seems like <@randomName> is not even assigned as standuper in this channel!\n"},
+		{4, channel.ChannelID, "wrongParameters", "Seems like you misspelled username. Please, check and try command again!"},
+		{2, channel.ChannelID, fmt.Sprintf("<@%v|username1> <@randomid|randomName>", chanMemb1.UserID), "Timetable for <@username1> is: | Monday 08:25 | Tuesday 08:25 | Friday 08:25 | Saturday 08:25 |\nSeems like <@randomName> is not even assigned as standuper in this channel!\n"},
 	}
-	expected := `Timetable for <@username1> is: | Monday 05:00 | Tuesday 05:00 | Wednesday 05:00 | Thursday 05:00 | Friday 05:00 |
-Seems like <@username2> is not even assigned as standuper in this channel!
-<@username3> does not have a timetable!
-Timetable for <@username4> is: | Monday 05:00 | Wednesday 05:00 | Thursday 05:00 | Saturday 05:00 |
-Timetable for <@username5> is: | Monday 05:00 | Wednesday 05:00 | Thursday 05:00 | Saturday 05:00 |
-`
-	for _, test := range testCase {
-		actual := r.showTimeTable(test.accessL, test.channelID, test.params)
-		assert.Equal(t, expected, actual)
+	for _, test := range testCases {
+		actual := r.showTimeTable(test.accessLevel, test.channelID, test.params)
+		assert.Equal(t, test.expected, actual)
 	}
-	//delete all channel members
-	for k := range IDs {
-		assert.NoError(t, r.db.DeleteChannelMember(k, "channelId11"))
-	}
-	assert.NoError(t, r.db.DeleteTimeTable(timetab.ID))
-	assert.NoError(t, r.db.DeleteTimeTable(timetab2.ID))
-	assert.NoError(t, r.db.DeleteTimeTable(timetab3.ID))
+	//deletes timetables
+	err = r.db.DeleteTimeTable(timeTable1.ID)
+	assert.NoError(t, err)
+	//deletes channel members
+	err = r.db.DeleteChannelMember(chanMemb1.UserID, channel.ChannelID)
+	assert.NoError(t, err)
+	err = r.db.DeleteChannelMember(chanMemb2.UserID, channel.ChannelID)
+	assert.NoError(t, err)
+	//deletes channel
+	err = r.db.DeleteChannel(channel.ID)
+	assert.NoError(t, err)
 }
 
 func TestRemoveTime(t *testing.T) {
@@ -465,6 +421,11 @@ func TestRemoveTime(t *testing.T) {
 	}
 	assert.NoError(t, r.db.DeleteChannel(channel.ID))
 	assert.NoError(t, r.db.DeleteChannel(channelWithMembers.ID))
+	//delete channel members
+	for _, cm := range chanMemb {
+		err := r.db.DeleteChannelMember(cm.UserID, cm.ChannelID)
+		assert.NoError(t, err)
+	}
 }
 
 func TestGetAccessLevel(t *testing.T) {
