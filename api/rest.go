@@ -459,6 +459,7 @@ func (r *REST) removeTime(accessLevel int, channelID string) string {
 
 func (r *REST) addTimeTable(accessLevel int, channelID, params string) string {
 	//add parsing of params
+	var totalString string
 	if accessLevel > 3 {
 		return r.conf.Translate.AccessAtLeastPM
 	}
@@ -471,7 +472,7 @@ func (r *REST) addTimeTable(accessLevel int, channelID, params string) string {
 	rg, _ := regexp.Compile("<@([a-z0-9]+)|([a-z0-9]+)>")
 	for _, u := range users {
 		if !rg.MatchString(u) {
-			logrus.Error(r.conf.Translate.WrongUsernameError)
+			totalString += r.conf.Translate.WrongUsernameError
 			continue
 		}
 		userID, userName := utils.SplitUser(u)
@@ -496,54 +497,55 @@ func (r *REST) addTimeTable(accessLevel int, channelID, params string) string {
 			ttNew = utils.PrepareTimeTable(ttNew, weekdays, time)
 			ttNew, err = r.db.UpdateTimeTable(ttNew)
 			if err != nil {
-				fmt.Sprintf(r.conf.Translate.CanNotUpdateTimetable, userName, err)
+				totalString += fmt.Sprintf(r.conf.Translate.CanNotUpdateTimetable, userName, err)
 				continue
 			}
 			logrus.Infof("Timetable created id:%v", ttNew.ID)
-			fmt.Sprintf(r.conf.Translate.TimetableCreated, userID, ttNew.Show())
+			totalString += fmt.Sprintf(r.conf.Translate.TimetableCreated, userID, ttNew.Show())
 			continue
 		}
 		tt = utils.PrepareTimeTable(tt, weekdays, time)
 		tt, err = r.db.UpdateTimeTable(tt)
 		if err != nil {
-			fmt.Sprintf(r.conf.Translate.CanNotUpdateTimetable, userName, err)
+			totalString += fmt.Sprintf(r.conf.Translate.CanNotUpdateTimetable, userName, err)
 			continue
 		}
 		logrus.Infof("Timetable updated id:%v", tt.ID)
-		fmt.Sprintf(r.conf.Translate.TimetableUpdated, userID, tt.Show())
+		totalString += fmt.Sprintf(r.conf.Translate.TimetableUpdated, userID, tt.Show())
 	}
-	return ""
+	return totalString
 }
 
 func (r *REST) showTimeTable(accessLevel int, channelID, params string) string {
+	var totalString string
 	//add parsing of params
 	users := strings.Split(params, " ")
 	rg, _ := regexp.Compile("<@([a-z0-9]+)|([a-z0-9]+)>")
 	for _, u := range users {
 		if !rg.MatchString(u) {
-			logrus.Error(r.conf.Translate.WrongUsernameError)
+			totalString += r.conf.Translate.WrongUsernameError
 			continue
 		}
 		userID, userName := utils.SplitUser(u)
 
 		m, err := r.db.FindChannelMemberByUserID(userID, channelID)
 		if err != nil {
-			fmt.Sprintf(r.conf.Translate.NotAStanduper, userName)
+			totalString += fmt.Sprintf(r.conf.Translate.NotAStanduper, userName)
 			continue
 		}
 		tt, err := r.db.SelectTimeTable(m.ID)
 		if err != nil {
-			fmt.Sprintf(r.conf.Translate.NoTimetableSet, userName)
+			totalString += fmt.Sprintf(r.conf.Translate.NoTimetableSet, userName)
 			continue
 		}
-		fmt.Sprintf(r.conf.Translate.TimetableShow, userName, tt.Show())
+		totalString += fmt.Sprintf(r.conf.Translate.TimetableShow, userName, tt.Show())
 	}
-	return ""
+	return totalString
 }
 
 func (r *REST) removeTimeTable(accessLevel int, channelID, params string) string {
 	//add parsing of params
-
+	var totalString string
 	if accessLevel > 3 {
 		return r.conf.Translate.AccessAtLeastPM
 	}
@@ -552,29 +554,29 @@ func (r *REST) removeTimeTable(accessLevel int, channelID, params string) string
 	rg, _ := regexp.Compile("<@([a-z0-9]+)|([a-z0-9]+)>")
 	for _, u := range users {
 		if !rg.MatchString(u) {
-			logrus.Error(r.conf.Translate.WrongUsernameError)
+			totalString += r.conf.Translate.WrongUsernameError
 			continue
 		}
 		userID, userName := utils.SplitUser(u)
 
 		m, err := r.db.FindChannelMemberByUserID(userID, channelID)
 		if err != nil {
-			fmt.Sprintf(r.conf.Translate.NotAStanduper, userName)
+			totalString += fmt.Sprintf(r.conf.Translate.NotAStanduper, userName)
 			continue
 		}
 		tt, err := r.db.SelectTimeTable(m.ID)
 		if err != nil {
-			fmt.Sprintf(r.conf.Translate.NoTimetableSet, userName)
+			totalString += fmt.Sprintf(r.conf.Translate.NoTimetableSet, userName)
 			continue
 		}
 		err = r.db.DeleteTimeTable(tt.ID)
 		if err != nil {
-			fmt.Sprintf(r.conf.Translate.CanNotDeleteTimetable, userName)
+			totalString += fmt.Sprintf(r.conf.Translate.CanNotDeleteTimetable, userName)
 			continue
 		}
-		fmt.Sprintf(r.conf.Translate.TimetableDeleted, userName)
+		totalString += fmt.Sprintf(r.conf.Translate.TimetableDeleted, userName)
 	}
-	return ""
+	return totalString
 }
 
 func (r *REST) reportByProject(accessLevel int, channelID, params string) string {
