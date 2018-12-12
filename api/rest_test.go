@@ -3,6 +3,8 @@ package api
 import (
 	"fmt"
 	"log"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -332,6 +334,11 @@ func TestShowTimeTable(t *testing.T) {
 		Sunday:    0,
 	})
 	assert.NoError(t, err)
+	//calculate hours and minutes from timestamp
+	//there may be different values on different computers
+	timeSt := time.Unix(12345, 0)
+	hour := strconv.Itoa(timeSt.Hour())
+	minute := strconv.Itoa(timeSt.Minute())
 	//updates timetable
 	_, err = r.db.UpdateTimeTable(timeTable1)
 	assert.NoError(t, err)
@@ -358,6 +365,8 @@ func TestShowTimeTable(t *testing.T) {
 	}
 	for _, test := range testCases {
 		actual := r.showTimeTable(test.accessLevel, test.channelID, test.params)
+		//replace "08:25" on calculated hour and minute from timestamp
+		actual = strings.Replace(actual, "08:25", "0"+hour+":"+minute, -1)
 		assert.Equal(t, test.expected, actual)
 	}
 	//deletes timetables
@@ -455,6 +464,11 @@ func TestAddTimeTable(t *testing.T) {
 	//updates timetable
 	_, err = r.db.UpdateTimeTable(timeTable)
 	assert.NoError(t, err)
+	//calculate hours and minutes from timestamp
+	//there may be different values on different computers
+	timeSt := time.Unix(12345, 0)
+	hour := strconv.Itoa(timeSt.Hour())
+	minute := strconv.Itoa(timeSt.Minute())
 
 	testCase := []struct {
 		accessLevel int
@@ -475,6 +489,8 @@ func TestAddTimeTable(t *testing.T) {
 	}
 	for _, test := range testCase {
 		actual := r.addTimeTable(test.accessLevel, test.channelID, test.params)
+		//replace "08:25" on calculated hour and minute from timestamp
+		actual = strings.Replace(actual, "08:25", "0"+hour+":"+minute, -1)
 		assert.Equal(t, test.expected, actual)
 	}
 	//delete timetable
