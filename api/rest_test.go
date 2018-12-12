@@ -366,8 +366,9 @@ func TestShowTimeTable(t *testing.T) {
 	for _, test := range testCases {
 		actual := r.showTimeTable(test.accessLevel, test.channelID, test.params)
 		//replace "08:25" on calculated hour and minute from timestamp
-		actual = strings.Replace(actual, "08:25", "0"+hour+":"+minute, -1)
-		assert.Equal(t, test.expected, actual)
+		expected := strings.Replace(test.expected, "08:25", "0"+hour+":"+minute, -1)
+		log.Println(expected)
+		assert.Equal(t, expected, actual)
 	}
 	//deletes timetables
 	err = r.db.DeleteTimeTable(timeTable1.ID)
@@ -490,8 +491,8 @@ func TestAddTimeTable(t *testing.T) {
 	for _, test := range testCase {
 		actual := r.addTimeTable(test.accessLevel, test.channelID, test.params)
 		//replace "08:25" on calculated hour and minute from timestamp
-		actual = strings.Replace(actual, "08:25", "0"+hour+":"+minute, -1)
-		assert.Equal(t, test.expected, actual)
+		expected := strings.Replace(test.expected, "08:25", "0"+hour+":"+minute, -1)
+		assert.Equal(t, expected, actual)
 	}
 	//delete timetable
 	err = r.db.DeleteTimeTable(timeTable.ID)
